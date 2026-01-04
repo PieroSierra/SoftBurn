@@ -13,5 +13,9 @@ struct SoftBurnApp: App {
         WindowGroup {
             ContentView()
         }
+        .commands {
+            // Add standard macOS commands
+            CommandGroup(replacing: .newItem) {}
+        }
     }
 }
