@@ -24,10 +24,12 @@ enum FileImportMode {
 
 struct ContentView: View {
     @StateObject private var slideshowState = SlideshowState()
+    @ObservedObject private var settings = SlideshowSettings.shared
     @State private var isImporting = false
     @State private var importMode: FileImportMode = .photos
     @State private var isSaving = false
     @State private var showOpenWarning = false
+    @State private var showSettings = false
     @State private var pendingOpenURL: URL?
     
     var body: some View {
@@ -89,7 +91,7 @@ struct ContentView: View {
         // Save slideshow dialog
         .fileExporter(
             isPresented: $isSaving,
-            document: SlideshowFileDocument(photos: slideshowState.photos),
+            document: SlideshowFileDocument(photos: slideshowState.photos, settings: settings.toDocumentSettings()),
             contentType: .softburn,
             defaultFilename: "My Slideshow"
         ) { result in
@@ -198,13 +200,15 @@ struct ContentView: View {
                 .disabled(!slideshowState.hasSelection)
                 
                 Button(action: {
-                    // Settings - not implemented in Phase 1
+                    showSettings.toggle()
                 }) {
                     Image(systemName: "gearshape")
                         .frame(width: 20, height: 20)
                 }
                 .help("Slideshow settings")
-                .disabled(true)
+                .popover(isPresented: $showSettings, arrowEdge: .bottom) {
+                    SettingsPopoverView(settings: settings)
+                }
                 
                 Button(action: {
                     // Play - not implemented in Phase 1
@@ -314,6 +318,9 @@ struct ContentView: View {
             // Replace current photos
             slideshowState.replacePhotos(with: photos)
             
+            // Apply settings from loaded document (overrides app settings)
+            settings.applyFromDocument(document.settings)
+            
         } catch {
             print("Error loading slideshow: \(error.localizedDescription)")
         }
@@ -329,8 +336,11 @@ struct SlideshowFileDocument: FileDocument {
     
     var document: SlideshowDocument
     
-    init(photos: [PhotoItem]) {
+    init(photos: [PhotoItem], settings: SlideshowDocument.Settings? = nil) {
         self.document = SlideshowDocument(photos: photos)
+        if let settings = settings {
+            self.document.settings = settings
+        }
     }
     
     init(configuration: ReadConfiguration) throws {

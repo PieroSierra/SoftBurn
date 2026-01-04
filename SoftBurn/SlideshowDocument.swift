@@ -42,23 +42,24 @@ struct SlideshowDocument: Codable {
     }
     
     struct Settings: Codable {
-        // Placeholder for future settings
         var shuffle: Bool
         var transitionStyle: TransitionStyle
+        var zoomOnFaces: Bool
         var backgroundColor: String // Hex color string
-        var secondsPerPhoto: Double
+        var slideDuration: Double // seconds per slide
         
         init() {
             self.shuffle = false
-            self.transitionStyle = .crossFade
+            self.transitionStyle = .panAndZoom
+            self.zoomOnFaces = true
             self.backgroundColor = "#000000"
-            self.secondsPerPhoto = 5.0
+            self.slideDuration = 5.0
         }
         
-        enum TransitionStyle: String, Codable {
-            case plain
-            case crossFade
-            case panAndZoom
+        enum TransitionStyle: String, Codable, CaseIterable {
+            case panAndZoom = "Pan & Zoom"
+            case crossFade = "Cross Dissolve"
+            case plain = "Plain"
         }
     }
     
