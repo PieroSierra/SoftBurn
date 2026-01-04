@@ -110,7 +110,7 @@ class SlideshowState: ObservableObject {
         photos.insert(photo, at: min(adjustedDestination, photos.count))
     }
     
-    /// Move a photo by ID to a new position (before the target photo)
+    /// Move a photo by ID to a new position relative to the target photo
     func movePhoto(withID sourceID: UUID, toPositionOf targetID: UUID) {
         guard let sourceIndex = photos.firstIndex(where: { $0.id == sourceID }),
               let targetIndex = photos.firstIndex(where: { $0.id == targetID }),
@@ -118,20 +118,36 @@ class SlideshowState: ObservableObject {
             return
         }
         
+        // Determine direction
+        let movingRight = sourceIndex < targetIndex
+        
         let photo = photos.remove(at: sourceIndex)
-        // After removal, target index may have shifted
-        let adjustedTarget = targetIndex > sourceIndex ? targetIndex - 1 : targetIndex
-        photos.insert(photo, at: adjustedTarget)
+        
+        // After removal, target index shifts left by 1 if we removed from before it
+        let newTargetIndex = movingRight ? targetIndex - 1 : targetIndex
+        
+        // Moving right: insert AFTER the target
+        // Moving left: insert BEFORE the target
+        let insertIndex = movingRight ? newTargetIndex + 1 : newTargetIndex
+        photos.insert(photo, at: min(insertIndex, photos.count))
     }
     
-    /// Move multiple photos by ID to a new position (before the target photo)
+    /// Move multiple photos by ID to a new position relative to the target photo
     /// Maintains the relative order of the moved photos
     func movePhotos(withIDs sourceIDs: [UUID], toPositionOf targetID: UUID) {
         guard !sourceIDs.isEmpty,
-              photos.contains(where: { $0.id == targetID }),
+              let targetIndex = photos.firstIndex(where: { $0.id == targetID }),
               !sourceIDs.contains(targetID) else {
             return
         }
+        
+        // Find the first source item's original index to determine direction
+        guard let firstSourceIndex = photos.firstIndex(where: { sourceIDs.contains($0.id) }) else {
+            return
+        }
+        
+        // Determine if we're moving right (later in list) or left (earlier in list)
+        let movingRight = firstSourceIndex < targetIndex
         
         // Extract the photos to move (in their current order)
         let photosToMove = photos.filter { sourceIDs.contains($0.id) }
@@ -146,8 +162,11 @@ class SlideshowState: ObservableObject {
             return
         }
         
-        // Insert all photos at the target position
-        photos.insert(contentsOf: photosToMove, at: newTargetIndex)
+        // Insert at the correct position based on direction
+        // Moving right: insert AFTER the target
+        // Moving left: insert BEFORE the target
+        let insertIndex = movingRight ? newTargetIndex + 1 : newTargetIndex
+        photos.insert(contentsOf: photosToMove, at: min(insertIndex, photos.count))
     }
 }
 
