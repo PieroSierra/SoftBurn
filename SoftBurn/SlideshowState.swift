@@ -40,6 +40,12 @@ class SlideshowState: ObservableObject {
         photos.append(contentsOf: newPhotos)
     }
     
+    /// Replace all photos with a new set (used when opening a saved slideshow)
+    func replacePhotos(with newPhotos: [PhotoItem]) {
+        photos = newPhotos
+        selectedPhotoIDs.removeAll()
+    }
+    
     /// Remove selected photos from the slideshow
     /// Note: This never deletes the original files
     func removeSelectedPhotos() {
@@ -113,7 +119,8 @@ class SlideshowState: ObservableObject {
         }
         
         let photo = photos.remove(at: sourceIndex)
-        let adjustedTarget = targetIndex > sourceIndex ? targetIndex : targetIndex
+        // After removal, target index may have shifted
+        let adjustedTarget = targetIndex > sourceIndex ? targetIndex - 1 : targetIndex
         photos.insert(photo, at: adjustedTarget)
     }
     
@@ -121,7 +128,7 @@ class SlideshowState: ObservableObject {
     /// Maintains the relative order of the moved photos
     func movePhotos(withIDs sourceIDs: [UUID], toPositionOf targetID: UUID) {
         guard !sourceIDs.isEmpty,
-              let targetIndex = photos.firstIndex(where: { $0.id == targetID }),
+              photos.contains(where: { $0.id == targetID }),
               !sourceIDs.contains(targetID) else {
             return
         }

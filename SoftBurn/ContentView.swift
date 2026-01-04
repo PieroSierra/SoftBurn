@@ -8,9 +8,27 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Custom UTType for .softburn files
+extension UTType {
+    static var softburn: UTType {
+        // Use the exported type from Info.plist
+        UTType(exportedAs: "com.softburn.slideshow")
+    }
+}
+
+/// Tracks which file operation is active
+enum FileImportMode {
+    case photos
+    case slideshow
+}
+
 struct ContentView: View {
     @StateObject private var slideshowState = SlideshowState()
     @State private var isImporting = false
+    @State private var importMode: FileImportMode = .photos
+    @State private var isSaving = false
+    @State private var showOpenWarning = false
+    @State private var pendingOpenURL: URL?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -55,12 +73,44 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 600)
+        // Single file importer for both photos and slideshows
         .fileImporter(
             isPresented: $isImporting,
-            allowedContentTypes: [.folder, .image],
-            allowsMultipleSelection: true
+            allowedContentTypes: importMode == .photos ? [.folder, .image] : [.softburn],
+            allowsMultipleSelection: importMode == .photos
         ) { result in
-            handleFileImport(result: result)
+            switch importMode {
+            case .photos:
+                handleFileImport(result: result)
+            case .slideshow:
+                handleOpenSlideshow(result: result)
+            }
+        }
+        // Save slideshow dialog
+        .fileExporter(
+            isPresented: $isSaving,
+            document: SlideshowFileDocument(photos: slideshowState.photos),
+            contentType: .softburn,
+            defaultFilename: "My Slideshow"
+        ) { result in
+            // Silently handle save result
+            if case .failure(let error) = result {
+                print("Save error: \(error.localizedDescription)")
+            }
+        }
+        // Warning dialog when opening with existing photos
+        .alert("Replace Current Slideshow?", isPresented: $showOpenWarning) {
+            Button("Cancel", role: .cancel) {
+                pendingOpenURL = nil
+            }
+            Button("Replace", role: .destructive) {
+                if let url = pendingOpenURL {
+                    loadSlideshow(from: url)
+                    pendingOpenURL = nil
+                }
+            }
+        } message: {
+            Text("Opening a slideshow will replace the \(slideshowState.photoCount) photos currently in your slideshow.")
         }
         // CMD+A to select all
         .background(
@@ -68,6 +118,25 @@ struct ContentView: View {
                 slideshowState.selectAll()
             }
             .keyboardShortcut("a", modifiers: .command)
+            .opacity(0)
+        )
+        // CMD+S to save
+        .background(
+            Button("") {
+                if !slideshowState.isEmpty {
+                    isSaving = true
+                }
+            }
+            .keyboardShortcut("s", modifiers: .command)
+            .opacity(0)
+        )
+        // CMD+O to open
+        .background(
+            Button("") {
+                importMode = .slideshow
+                isImporting = true
+            }
+            .keyboardShortcut("o", modifiers: .command)
             .opacity(0)
         )
     }
@@ -79,6 +148,7 @@ struct ContentView: View {
             // Left side buttons
             HStack(spacing: 12) {
                 Button(action: {
+                    importMode = .photos
                     isImporting = true
                 }) {
                     Image(systemName: "plus")
@@ -87,22 +157,22 @@ struct ContentView: View {
                 .help("Add photos")
                 
                 Button(action: {
-                    // Save - not implemented in Phase 1
+                    isSaving = true
                 }) {
                     Image(systemName: "square.and.arrow.down")
                         .frame(width: 20, height: 20)
                 }
                 .help("Save slideshow")
-                .disabled(true)
+                .disabled(slideshowState.isEmpty)
                 
                 Button(action: {
-                    // Open - not implemented in Phase 1
+                    importMode = .slideshow
+                    isImporting = true
                 }) {
                     Image(systemName: "folder")
                         .frame(width: 20, height: 20)
                 }
                 .help("Open slideshow")
-                .disabled(true)
             }
             
             Spacer()
@@ -207,6 +277,72 @@ struct ContentView: View {
         }
         
         lastSelectedIndex = currentIndex
+    }
+    
+    // MARK: - Save/Open
+    
+    private func handleOpenSlideshow(result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            
+            // If we have existing photos, show warning dialog
+            if !slideshowState.isEmpty {
+                pendingOpenURL = url
+                showOpenWarning = true
+            } else {
+                loadSlideshow(from: url)
+            }
+            
+        case .failure:
+            // Silently ignore errors
+            break
+        }
+    }
+    
+    private func loadSlideshow(from url: URL) {
+        do {
+            // Access security-scoped resource
+            guard url.startAccessingSecurityScopedResource() else {
+                return
+            }
+            defer { url.stopAccessingSecurityScopedResource() }
+            
+            let document = try SlideshowDocument.load(from: url)
+            let photos = document.loadPhotos()
+            
+            // Replace current photos
+            slideshowState.replacePhotos(with: photos)
+            
+        } catch {
+            print("Error loading slideshow: \(error.localizedDescription)")
+        }
+    }
+}
+
+// MARK: - FileDocument for Save
+
+/// Wrapper for fileExporter compatibility
+struct SlideshowFileDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.softburn] }
+    static var writableContentTypes: [UTType] { [.softburn] }
+    
+    var document: SlideshowDocument
+    
+    init(photos: [PhotoItem]) {
+        self.document = SlideshowDocument(photos: photos)
+    }
+    
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.document = try SlideshowDocument.decode(from: data)
+    }
+    
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        let data = try document.encode()
+        return FileWrapper(regularFileWithContents: data)
     }
 }
 

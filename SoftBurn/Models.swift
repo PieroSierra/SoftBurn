@@ -9,7 +9,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// Represents a photo in the slideshow
-struct PhotoItem: Identifiable, Hashable, Codable {
+struct PhotoItem: Identifiable, Hashable, Codable, Sendable {
     let id: UUID
     let url: URL
     
@@ -24,19 +24,15 @@ struct PhotoItem: Identifiable, Hashable, Codable {
     }
 }
 
-/// Supported image file types
+/// Supported image file types - helper functions are nonisolated for background thread use
 extension PhotoItem {
-    static let supportedImageTypes: [UTType] = [
-        .jpeg, .png, .gif, .bmp, .tiff, .heic, .heif, .webP
-    ]
+    static let supportedExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "heic", "heif", "webp"]
     
+    /// Check if a URL points to an image file (safe to call from any thread)
     static func isImageFile(_ url: URL) -> Bool {
-        guard let fileType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType else {
-            // Fallback to extension check
-            let ext = url.pathExtension.lowercased()
-            return ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "heic", "heif", "webp"].contains(ext)
-        }
-        return supportedImageTypes.contains(where: { fileType.conforms(to: $0) })
+        // Use extension check which is thread-safe
+        let ext = url.pathExtension.lowercased()
+        return supportedExtensions.contains(ext)
     }
 }
 
