@@ -38,8 +38,18 @@ struct ContentView: View {
                             await importPhotos(from: urls)
                         }
                     },
-                    onReorder: { sourceID, targetID in
-                        slideshowState.movePhoto(withID: sourceID, toPositionOf: targetID)
+                    onReorder: { sourceIDs, targetID in
+                        slideshowState.movePhotos(withIDs: sourceIDs, toPositionOf: targetID)
+                    },
+                    onDragStart: { photoID in
+                        // Select the dragged item if not already selected
+                        if !slideshowState.selectedPhotoIDs.contains(photoID) {
+                            slideshowState.deselectAll()
+                            slideshowState.toggleSelection(for: photoID)
+                        }
+                    },
+                    onDeselectAll: {
+                        slideshowState.deselectAll()
                     }
                 )
             }
@@ -52,6 +62,14 @@ struct ContentView: View {
         ) { result in
             handleFileImport(result: result)
         }
+        // CMD+A to select all
+        .background(
+            Button("") {
+                slideshowState.selectAll()
+            }
+            .keyboardShortcut("a", modifiers: .command)
+            .opacity(0)
+        )
     }
     
     // MARK: - Toolbar
@@ -64,6 +82,7 @@ struct ContentView: View {
                     isImporting = true
                 }) {
                     Image(systemName: "plus")
+                        .frame(width: 20, height: 20)
                 }
                 .help("Add photos")
                 
@@ -71,6 +90,7 @@ struct ContentView: View {
                     // Save - not implemented in Phase 1
                 }) {
                     Image(systemName: "square.and.arrow.down")
+                        .frame(width: 20, height: 20)
                 }
                 .help("Save slideshow")
                 .disabled(true)
@@ -79,6 +99,7 @@ struct ContentView: View {
                     // Open - not implemented in Phase 1
                 }) {
                     Image(systemName: "folder")
+                        .frame(width: 20, height: 20)
                 }
                 .help("Open slideshow")
                 .disabled(true)
@@ -101,6 +122,7 @@ struct ContentView: View {
                     slideshowState.removeSelectedPhotos()
                 }) {
                     Image(systemName: "trash")
+                        .frame(width: 20, height: 20)
                 }
                 .help("Remove from slideshow (does not delete files)")
                 .disabled(!slideshowState.hasSelection)
@@ -109,6 +131,7 @@ struct ContentView: View {
                     // Settings - not implemented in Phase 1
                 }) {
                     Image(systemName: "gearshape")
+                        .frame(width: 20, height: 20)
                 }
                 .help("Slideshow settings")
                 .disabled(true)
@@ -117,6 +140,7 @@ struct ContentView: View {
                     // Play - not implemented in Phase 1
                 }) {
                     Image(systemName: "play.fill")
+                        .frame(width: 20, height: 20)
                 }
                 .help("Play slideshow")
                 .disabled(true)

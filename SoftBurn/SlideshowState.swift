@@ -116,5 +116,31 @@ class SlideshowState: ObservableObject {
         let adjustedTarget = targetIndex > sourceIndex ? targetIndex : targetIndex
         photos.insert(photo, at: adjustedTarget)
     }
+    
+    /// Move multiple photos by ID to a new position (before the target photo)
+    /// Maintains the relative order of the moved photos
+    func movePhotos(withIDs sourceIDs: [UUID], toPositionOf targetID: UUID) {
+        guard !sourceIDs.isEmpty,
+              let targetIndex = photos.firstIndex(where: { $0.id == targetID }),
+              !sourceIDs.contains(targetID) else {
+            return
+        }
+        
+        // Extract the photos to move (in their current order)
+        let photosToMove = photos.filter { sourceIDs.contains($0.id) }
+        
+        // Remove them from the array
+        photos.removeAll { sourceIDs.contains($0.id) }
+        
+        // Find new target index (may have shifted after removal)
+        guard let newTargetIndex = photos.firstIndex(where: { $0.id == targetID }) else {
+            // Target was removed, append at end
+            photos.append(contentsOf: photosToMove)
+            return
+        }
+        
+        // Insert all photos at the target position
+        photos.insert(contentsOf: photosToMove, at: newTargetIndex)
+    }
 }
 
