@@ -58,7 +58,7 @@ struct SlideshowDocument: Codable {
         
         enum TransitionStyle: String, Codable, CaseIterable {
             case panAndZoom = "Pan & Zoom"
-            case crossFade = "Cross Dissolve"
+            case crossFade = "Cross Fade"
             case plain = "Plain"
         }
     }

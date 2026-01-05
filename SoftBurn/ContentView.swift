@@ -31,6 +31,7 @@ struct ContentView: View {
     @State private var showOpenWarning = false
     @State private var showSettings = false
     @State private var pendingOpenURL: URL?
+    @State private var isPlayingSlideshow = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -141,6 +142,37 @@ struct ContentView: View {
             .keyboardShortcut("o", modifiers: .command)
             .opacity(0)
         )
+        // Launch slideshow when isPlayingSlideshow becomes true
+        .onChange(of: isPlayingSlideshow) { _, isPlaying in
+            if isPlaying {
+                openSlideshowWindow()
+            }
+        }
+    }
+    
+    // MARK: - Slideshow Window
+    
+    private func openSlideshowWindow() {
+        SlideshowWindowController.shared.onClose = { [self] in
+            isPlayingSlideshow = false
+        }
+
+        let slideshowView = SlideshowPlayerView(
+            photos: slideshowState.photos,
+            settings: settings,
+            onExit: {
+                SlideshowWindowController.shared.close()
+            }
+        )
+
+        SlideshowWindowController.shared.present(
+            rootView: AnyView(slideshowView),
+            backgroundColor: NSColor(settings.backgroundColor)
+        )
+    }
+    
+    private func closeSlideshowWindow() {
+        SlideshowWindowController.shared.close()
     }
     
     // MARK: - Toolbar
@@ -211,13 +243,13 @@ struct ContentView: View {
                 }
                 
                 Button(action: {
-                    // Play - not implemented in Phase 1
+                    isPlayingSlideshow = true
                 }) {
                     Image(systemName: "play.fill")
                         .frame(width: 20, height: 20)
                 }
                 .help("Play slideshow")
-                .disabled(true)
+                .disabled(slideshowState.isEmpty)
             }
         }
         .padding(.horizontal, 16)
@@ -353,6 +385,91 @@ struct SlideshowFileDocument: FileDocument {
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let data = try document.encode()
         return FileWrapper(regularFileWithContents: data)
+    }
+}
+
+// MARK: - Slideshow Window Controller
+
+/// Manages the full-screen slideshow window
+class SlideshowWindowController: NSObject, NSWindowDelegate {
+    static let shared = SlideshowWindowController()
+    
+    var window: NSWindow?
+    var onClose: (() -> Void)?
+    private var previousPresentationOptions: NSApplication.PresentationOptions?
+    
+    private override init() {
+        super.init()
+    }
+    
+    func present(rootView: AnyView, backgroundColor: NSColor) {
+        guard let screen = NSScreen.main else { return }
+
+        // Create the window once and reuse it. Avoiding window deallocation has proven far more stable.
+        let window: NSWindow = {
+            if let existing = self.window { return existing }
+
+            let w = NSWindow(
+                contentRect: screen.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            w.isOpaque = true
+            w.hasShadow = false
+            w.animationBehavior = .none
+            w.collectionBehavior = [.canJoinAllSpaces, .stationary]
+
+            // Keep the slideshow above everything.
+            w.level = .screenSaver
+
+            // Ensure we can accept key events.
+            w.ignoresMouseEvents = false
+            w.acceptsMouseMovedEvents = true
+
+            // Delegate for lifecycle
+            w.delegate = self
+
+            self.window = w
+            return w
+        }()
+
+        // Hide menu bar / dock during playback (restore on close)
+        if previousPresentationOptions == nil {
+            previousPresentationOptions = NSApp.presentationOptions
+        }
+        NSApp.presentationOptions = (previousPresentationOptions ?? []).union([.hideDock, .hideMenuBar])
+
+        window.backgroundColor = backgroundColor
+        window.setFrame(screen.frame, display: true)
+        window.contentView = NSHostingView(rootView: rootView)
+
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(window.contentView)
+    }
+
+    func close() {
+        // Always ensure cursor is visible first
+        NSCursor.unhide()
+
+        // Restore presentation options (menu bar / dock)
+        if let previous = previousPresentationOptions {
+            NSApp.presentationOptions = previous
+            previousPresentationOptions = nil
+        }
+
+        guard let window = window else {
+            onClose?()
+            return
+        }
+
+        // Release SwiftUI tree immediately, but KEEP the NSWindow alive (no close/dealloc).
+        window.contentView = nil
+        window.orderOut(nil)
+
+        let callback = onClose
+        onClose = nil
+        callback?()
     }
 }
 
