@@ -21,6 +21,10 @@ class SlideshowSettings: ObservableObject {
     @AppStorage("settings.backgroundColor") private var storedBackgroundColor: String = "#000000"
     @AppStorage("settings.slideDuration") private var storedSlideDuration: Double = 5.0
     
+#if DEBUG
+    @AppStorage("settings.debugShowFaces") private var storedDebugShowFaces: Bool = false
+#endif
+    
     // MARK: - Published Properties (for UI binding)
     
     @Published var transitionStyle: SlideshowDocument.Settings.TransitionStyle = .panAndZoom {
@@ -43,6 +47,16 @@ class SlideshowSettings: ObservableObject {
         didSet { storedSlideDuration = slideDuration }
     }
     
+    /// Debug-only: draw detected face rectangles over the slideshow image.
+    /// This property exists in Release too (always false), but the UI toggle is only shown in DEBUG builds.
+#if DEBUG
+    @Published var debugShowFaces: Bool = false {
+        didSet { storedDebugShowFaces = debugShowFaces }
+    }
+#else
+    @Published var debugShowFaces: Bool = false
+#endif
+    
     // MARK: - Initialization
     
     private init() {
@@ -56,6 +70,9 @@ class SlideshowSettings: ObservableObject {
         zoomOnFaces = storedZoomOnFaces
         backgroundColor = Color(hex: storedBackgroundColor) ?? .black
         slideDuration = storedSlideDuration
+#if DEBUG
+        debugShowFaces = storedDebugShowFaces
+#endif
     }
     
     // MARK: - Import/Export for File Save/Load

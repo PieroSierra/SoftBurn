@@ -53,7 +53,11 @@ struct SlideshowPlayerView: View {
                 case .crossFade:
                     CrossFadeTransitionView(playerState: playerState)
                 case .panAndZoom:
-                    PanAndZoomTransitionView(playerState: playerState)
+                    PanAndZoomTransitionView(
+                        playerState: playerState,
+                        zoomOnFaces: settings.zoomOnFaces,
+                        debugShowFaces: settings.debugShowFaces
+                    )
                 }
             }
         }
@@ -106,6 +110,14 @@ class SlideshowPlayerState: ObservableObject {
     @Published var currentIndex: Int = 0
     @Published var currentImage: NSImage?
     @Published var nextImage: NSImage?
+
+    /// Vision face boxes (normalized rects, origin bottom-left).
+    @Published var currentFaceBoxes: [CGRect] = []
+    @Published var nextFaceBoxes: [CGRect] = []
+
+    /// Ken Burns end targets (normalized offsets, where (0,0) is center; +y is down in view space).
+    @Published var currentEndOffset: CGSize = .zero
+    @Published var nextEndOffset: CGSize = .zero
     
     /// Animation progress (0 = start, 1 = end of current slide)
     @Published var animationProgress: Double = 0
@@ -159,6 +171,10 @@ class SlideshowPlayerState: ObservableObject {
         // Clear images to release GPU resources
         currentImage = nil
         nextImage = nil
+        currentFaceBoxes = []
+        nextFaceBoxes = []
+        currentEndOffset = .zero
+        nextEndOffset = .zero
         
         // Clear the image loader cache (fire and forget - no await needed)
         Task.detached { [imageLoader] in
@@ -206,6 +222,17 @@ class SlideshowPlayerState: ObservableObject {
                 guard !self.isStopped else { return }
                 self.nextImage = image
             }
+
+            // Pull cached face data (no detection here) and choose a target per-load.
+            guard !self.isStopped else { return }
+            let currentFaces = await FaceDetectionCache.shared.cachedFaces(for: currentURL) ?? []
+            let nextFaces = await FaceDetectionCache.shared.cachedFaces(for: nextURL) ?? []
+            guard !self.isStopped else { return }
+
+            self.currentFaceBoxes = currentFaces
+            self.nextFaceBoxes = nextFaces
+            self.currentEndOffset = Self.faceTargetOffset(from: currentFaces)
+            self.nextEndOffset = Self.faceTargetOffset(from: nextFaces)
         }
     }
     
@@ -246,6 +273,8 @@ class SlideshowPlayerState: ObservableObject {
         
         // Swap images: next becomes current
         currentImage = nextImage
+        currentFaceBoxes = nextFaceBoxes
+        currentEndOffset = nextEndOffset
         
         // Load the new next image
         let nextIndex = (currentIndex + 1) % photos.count
@@ -257,7 +286,41 @@ class SlideshowPlayerState: ObservableObject {
                 guard !self.isStopped else { return }
                 self.nextImage = image
             }
+
+            // Cached face data + random face selection for the new "next"
+            guard !self.isStopped else { return }
+            let faces = await FaceDetectionCache.shared.cachedFaces(for: nextURL) ?? []
+            guard !self.isStopped else { return }
+            self.nextFaceBoxes = faces
+            self.nextEndOffset = Self.faceTargetOffset(from: faces)
         }
+    }
+
+    // MARK: - Face targeting
+
+    private static func faceTargetOffset(from faces: [CGRect]) -> CGSize {
+        guard let face = faces.randomElement() else {
+            return .zero
+        }
+
+        // Vision boundingBox is normalized, origin bottom-left.
+        let centerX = face.midX
+        let centerY = face.midY
+
+        // Convert face center to a translation that moves the IMAGE such that the face moves toward the VIEW center.
+        // - If the face is to the right (centerX > 0.5), we must shift the image left (negative), and vice-versa.
+        // - Vision's Y is bottom-left; SwiftUI's Y is top-left, so the sign for Y differs from naive subtraction.
+        //
+        // Result is a normalized offset where (0,0) means centered, +y means down (SwiftUI).
+        var x = 0.5 - centerX
+        var y = centerY - 0.5
+
+        // Clamp to a safe range so we don't pan too far.
+        let clamp: Double = 0.25
+        x = min(clamp, max(-clamp, x))
+        y = min(clamp, max(-clamp, y))
+
+        return CGSize(width: x, height: y)
     }
     
     private func updateAnimationProgress(deltaTime: Double) {
@@ -335,6 +398,8 @@ struct CrossFadeTransitionView: View {
 /// Ken Burns (Pan & Zoom): both images move continuously, and cross-fade overlaps.
 struct PanAndZoomTransitionView: View {
     @ObservedObject var playerState: SlideshowPlayerState
+    let zoomOnFaces: Bool
+    let debugShowFaces: Bool
     
     private let startScale: Double = 1.0
     private let endScale: Double = 1.4
@@ -380,6 +445,10 @@ struct PanAndZoomTransitionView: View {
                     KenBurnsImageView(
                         image: image,
                         idSeed: playerState.photos[playerState.currentIndex].url.absoluteString,
+                        endOffset: playerState.currentEndOffset,
+                        useFaceTarget: zoomOnFaces,
+                        faceBoxes: playerState.currentFaceBoxes,
+                        debugShowFaces: debugShowFaces,
                         startScale: startScale,
                         endScale: endScale,
                         motionElapsed: currentMotionElapsed,
@@ -394,6 +463,10 @@ struct PanAndZoomTransitionView: View {
                     KenBurnsImageView(
                         image: image,
                         idSeed: playerState.photos[nextIndex].url.absoluteString,
+                        endOffset: playerState.nextEndOffset,
+                        useFaceTarget: zoomOnFaces,
+                        faceBoxes: playerState.nextFaceBoxes,
+                        debugShowFaces: debugShowFaces,
                         startScale: startScale,
                         endScale: endScale,
                         motionElapsed: nextMotionElapsed,
@@ -411,6 +484,10 @@ struct PanAndZoomTransitionView: View {
 private struct KenBurnsImageView: View {
     let image: NSImage
     let idSeed: String
+    let endOffset: CGSize
+    let useFaceTarget: Bool
+    let faceBoxes: [CGRect]
+    let debugShowFaces: Bool
     let startScale: Double
     let endScale: Double
     let motionElapsed: Double
@@ -429,17 +506,30 @@ private struct KenBurnsImageView: View {
     private var startOffset: CGSize {
         KenBurnsDeterministic.offset(for: idSeed)
     }
+
+    private var effectiveEndOffset: CGSize {
+        useFaceTarget ? endOffset : .zero
+    }
     
     private var offset: CGSize {
-        // Linearly interpolate from (startOffset) -> (0,0)
-        CGSize(width: startOffset.width * (1.0 - progress), height: startOffset.height * (1.0 - progress))
+        // Linearly interpolate from startOffset -> endOffset (face center or center)
+        CGSize(
+            width: (startOffset.width * (1.0 - progress)) + (effectiveEndOffset.width * progress),
+            height: (startOffset.height * (1.0 - progress)) + (effectiveEndOffset.height * progress)
+        )
     }
     
     var body: some View {
         GeometryReader { geo in
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
+            ZStack {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+
+                if debugShowFaces, !faceBoxes.isEmpty {
+                    FaceBoxesOverlay(image: image, faceBoxes: faceBoxes)
+                }
+            }
                 .scaleEffect(scale)
                 // Offsets are normalized relative to the visible frame.
                 .offset(x: offset.width * geo.size.width, y: offset.height * geo.size.height)
@@ -447,6 +537,40 @@ private struct KenBurnsImageView: View {
                 .clipped()
                 .opacity(opacity)
         }
+    }
+}
+
+private struct FaceBoxesOverlay: View {
+    let image: NSImage
+    let faceBoxes: [CGRect]
+
+    var body: some View {
+        GeometryReader { geo in
+            let container = geo.size
+            let img = image.size
+            let scale = min(container.width / max(1, img.width), container.height / max(1, img.height))
+            let fitted = CGSize(width: img.width * scale, height: img.height * scale)
+            let origin = CGPoint(
+                x: (container.width - fitted.width) / 2.0,
+                y: (container.height - fitted.height) / 2.0
+            )
+
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(faceBoxes.enumerated()), id: \.offset) { _, box in
+                    // Vision normalized rect origin is bottom-left; SwiftUI is top-left.
+                    let x = origin.x + (box.minX * fitted.width)
+                    let y = origin.y + ((1.0 - box.maxY) * fitted.height)
+                    let w = box.width * fitted.width
+                    let h = box.height * fitted.height
+
+                    Rectangle()
+                        .stroke(Color.red.opacity(0.9), lineWidth: 2)
+                        .frame(width: w, height: h)
+                        .position(x: x + (w / 2.0), y: y + (h / 2.0))
+                }
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 

@@ -228,7 +228,7 @@ struct ContentView: View {
                     Image(systemName: "trash")
                         .frame(width: 20, height: 20)
                 }
-                .help("Remove from slideshow (does not delete files)")
+                .help("Remove from slideshow")
                 .disabled(!slideshowState.hasSelection)
                 
                 Button(action: {
@@ -247,6 +247,7 @@ struct ContentView: View {
                 }) {
                     Image(systemName: "play.fill")
                         .frame(width: 20, height: 20)
+                        .foregroundStyle(slideshowState.isEmpty ? Color.secondary : Color.blue)
                 }
                 .help("Play slideshow")
                 .disabled(slideshowState.isEmpty)
@@ -288,6 +289,11 @@ struct ContentView: View {
     private func importPhotos(from urls: [URL]) async {
         let photos = await PhotoDiscovery.discoverPhotos(from: urls)
         slideshowState.addPhotos(photos)
+        
+        // Face detection prefetch (import-time only; never during playback)
+        Task.detached(priority: .utility) {
+            await FaceDetectionCache.shared.prefetch(urls: photos.map(\.url))
+        }
     }
     
     // MARK: - Selection Handling
@@ -353,6 +359,11 @@ struct ContentView: View {
             // Apply settings from loaded document (overrides app settings)
             settings.applyFromDocument(document.settings)
             
+            // Face detection prefetch (open-time only; never during playback)
+            Task.detached(priority: .utility) {
+                await FaceDetectionCache.shared.prefetch(urls: photos.map(\.url))
+            }
+            
         } catch {
             print("Error loading slideshow: \(error.localizedDescription)")
         }
@@ -405,6 +416,9 @@ class SlideshowWindowController: NSObject, NSWindowDelegate {
     func present(rootView: AnyView, backgroundColor: NSColor) {
         guard let screen = NSScreen.main else { return }
 
+        // Prevent the screen saver / display sleep while playing.
+        ScreenIdleSleepController.shared.start()
+
         // Create the window once and reuse it. Avoiding window deallocation has proven far more stable.
         let window: NSWindow = {
             if let existing = self.window { return existing }
@@ -451,6 +465,9 @@ class SlideshowWindowController: NSObject, NSWindowDelegate {
     func close() {
         // Always ensure cursor is visible first
         NSCursor.unhide()
+
+        // Re-enable normal macOS idle behavior.
+        ScreenIdleSleepController.shared.stop()
 
         // Restore presentation options (menu bar / dock)
         if let previous = previousPresentationOptions {

@@ -42,7 +42,7 @@ struct ThumbnailView: View {
                 }
                 
                 // Drag indicator overlay in upper-left corner
-                Image(systemName: "circle.grid.3x3.fill")
+                Image(systemName: "circle.grid.2x2.fill")
                     .font(.system(size: 12))
                     .foregroundColor(.white)
                     .padding(6)

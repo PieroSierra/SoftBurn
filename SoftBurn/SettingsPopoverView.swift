@@ -74,6 +74,16 @@ struct SettingsPopoverView: View {
                 Toggle("Shuffle photos", isOn: $settings.shuffle)
                     .toggleStyle(.checkbox)
             }
+            
+#if DEBUG
+            Divider()
+                .padding(.vertical, 4)
+            
+            settingsRow(label: "Debug") {
+                Toggle("Show face boxes", isOn: $settings.debugShowFaces)
+                    .toggleStyle(.checkbox)
+            }
+#endif
    
         }
         .padding(16)
