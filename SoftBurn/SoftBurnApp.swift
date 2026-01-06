@@ -9,9 +9,13 @@ import SwiftUI
 
 @main
 struct SoftBurnApp: App {
+    @NSApplicationDelegateAdaptor(SoftBurnAppDelegate.self) private var appDelegate
+    @StateObject private var session = AppSessionState.shared
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(session)
         }
         .commands {
             // Add standard macOS commands

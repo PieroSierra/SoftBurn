@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CoreGraphics
 import Vision
 
 /// In-memory cache of Vision face detection results.
@@ -24,6 +25,33 @@ actor FaceDetectionCache {
     /// Returns cached faces if available (no detection is performed).
     func cachedFaces(for url: URL) -> [CGRect]? {
         cache[url]
+    }
+
+    /// Ingest face data loaded from a saved document.
+    /// - Important: This is trusted as authoritative and will not be re-detected.
+    func ingest(faceRectsByPath: [String: [SlideshowDocument.FaceRect]]?) {
+        guard let faceRectsByPath else { return }
+        for (path, rects) in faceRectsByPath {
+            let url = URL(fileURLWithPath: path)
+            // Avoid keypaths here to satisfy Swift 6 strict concurrency/isolation checks.
+            cache[url] = rects.map { CGRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height) }
+        }
+    }
+
+    /// Snapshot currently-cached face rects for the provided URLs (keyed by `url.path`).
+    /// - Note: URLs that have no cached entry are omitted (so they can be detected later and saved next time).
+    func snapshotFaceRectsByPath(for urls: [URL]) async -> [String: [SlideshowDocument.FaceRect]] {
+        var result: [String: [SlideshowDocument.FaceRect]] = [:]
+        for url in urls {
+            guard let rects = cache[url] else { continue }
+            // If your project uses "Default actor = MainActor", value-type initializers may become MainActor-isolated.
+            // Construct these on the main actor to avoid Swift 6 isolation warnings.
+            let faceRects = await MainActor.run {
+                rects.map { SlideshowDocument.FaceRect(x: $0.origin.x, y: $0.origin.y, width: $0.size.width, height: $0.size.height) }
+            }
+            result[url.path] = faceRects
+        }
+        return result
     }
 
     /// Prefetch face detection for URLs that aren't cached yet.
@@ -70,7 +98,15 @@ actor FaceDetectionCache {
     // MARK: - Internals
 
     private func store(url: URL, faces: [CGRect]) {
+        let wasMissing = (cache[url] == nil)
         cache[url] = faces
+
+        // Face metadata changed (import-time only) → mark document dirty so it can be persisted on next save.
+        if wasMissing {
+            Task { @MainActor in
+                AppSessionState.shared.markDirty()
+            }
+        }
     }
 
     private func markDone(url: URL) {
@@ -93,7 +129,8 @@ actor FaceDetectionCache {
 
                 do {
                     try handler.perform([request])
-                    let observations = (request.results as? [VNFaceObservation]) ?? []
+                    // VNDetectFaceRectanglesRequest.results is already [VNFaceObservation]? on modern SDKs.
+                    let observations = request.results ?? []
                     return observations.map(\.boundingBox)
                 } catch {
                     return []

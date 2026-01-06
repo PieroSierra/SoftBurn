@@ -11,8 +11,11 @@ import UniformTypeIdentifiers
 /// Custom UTType for .softburn files
 extension UTType {
     static var softburn: UTType {
-        // Use the exported type from Info.plist
-        UTType(exportedAs: "com.softburn.slideshow")
+        // Prefer looking up the exported type (from Info.plist) to avoid "expected to be declared" warnings.
+        // Fall back to filename-extension based type so open/save still works even if the target isn't using our Info.plist.
+        UTType("com.softburn.slideshow")
+            ?? UTType(filenameExtension: "softburn", conformingTo: .json)
+            ?? .json
     }
 }
 
@@ -25,9 +28,11 @@ enum FileImportMode {
 struct ContentView: View {
     @StateObject private var slideshowState = SlideshowState()
     @ObservedObject private var settings = SlideshowSettings.shared
+    @EnvironmentObject private var session: AppSessionState
     @State private var isImporting = false
     @State private var importMode: FileImportMode = .photos
     @State private var isSaving = false
+    @State private var exportDocument = SlideshowFileDocument(photos: [])
     @State private var showOpenWarning = false
     @State private var showSettings = false
     @State private var pendingOpenURL: URL?
@@ -92,12 +97,16 @@ struct ContentView: View {
         // Save slideshow dialog
         .fileExporter(
             isPresented: $isSaving,
-            document: SlideshowFileDocument(photos: slideshowState.photos, settings: settings.toDocumentSettings()),
+            document: exportDocument,
             contentType: .softburn,
             defaultFilename: "My Slideshow"
         ) { result in
             // Silently handle save result
-            if case .failure(let error) = result {
+            switch result {
+            case .success:
+                session.markClean()
+                session.performPendingActionAfterSuccessfulSave()
+            case .failure(let error):
                 print("Save error: \(error.localizedDescription)")
             }
         }
@@ -115,6 +124,20 @@ struct ContentView: View {
         } message: {
             Text("Opening a slideshow will replace the \(slideshowState.photoCount) photos currently in your slideshow.")
         }
+        // Unsaved changes prompt (Quit / Close window)
+        .alert("You have unsaved changes", isPresented: $session.showUnsavedChangesAlert) {
+            Button("Save") {
+                beginSave()
+            }
+            Button("Don’t Save", role: .destructive) {
+                session.discardChangesAndPerformPendingAction()
+            }
+            Button("Cancel", role: .cancel) {
+                session.cancelPendingAction()
+            }
+        } message: {
+            Text("Do you want to save the changes you made to your slideshow?")
+        }
         // CMD+A to select all
         .background(
             Button("") {
@@ -126,9 +149,7 @@ struct ContentView: View {
         // CMD+S to save
         .background(
             Button("") {
-                if !slideshowState.isEmpty {
-                    isSaving = true
-                }
+                beginSave()
             }
             .keyboardShortcut("s", modifiers: .command)
             .opacity(0)
@@ -148,6 +169,26 @@ struct ContentView: View {
                 openSlideshowWindow()
             }
         }
+        // Keep session in sync with whether the canvas has any photos.
+        .onChange(of: slideshowState.isEmpty) { _, isEmpty in
+            session.hasPhotos = !isEmpty
+            if isEmpty {
+                // If nothing remains, treat the session as safe to quit/close without warning.
+                session.markClean()
+            }
+        }
+        .background(WindowAccessor { window in
+            // Intercept window close (Cmd+W / red close button) to show unsaved changes prompt.
+            if window.delegate !== MainWindowDelegate.shared {
+                window.delegate = MainWindowDelegate.shared
+            }
+        })
+        // Mark dirty on settings changes
+        .onChange(of: settings.transitionStyle) { session.markDirty() }
+        .onChange(of: settings.shuffle) { session.markDirty() }
+        .onChange(of: settings.zoomOnFaces) { session.markDirty() }
+        .onChange(of: settings.backgroundColor) { session.markDirty() }
+        .onChange(of: settings.slideDuration) { session.markDirty() }
     }
     
     // MARK: - Slideshow Window
@@ -191,7 +232,7 @@ struct ContentView: View {
                 .help("Add photos")
                 
                 Button(action: {
-                    isSaving = true
+                    beginSave()
                 }) {
                     Image(systemName: "square.and.arrow.down")
                         .frame(width: 20, height: 20)
@@ -352,12 +393,20 @@ struct ContentView: View {
             
             let document = try SlideshowDocument.load(from: url)
             let photos = document.loadPhotos()
+
+            // Hydrate face cache from document (trusted; no re-detection for these entries)
+            Task.detached(priority: .utility) {
+                await FaceDetectionCache.shared.ingest(faceRectsByPath: document.faceRectsByPath)
+            }
             
             // Replace current photos
             slideshowState.replacePhotos(with: photos)
             
             // Apply settings from loaded document (overrides app settings)
             settings.applyFromDocument(document.settings)
+            
+            // Opening a document sets a clean baseline.
+            session.markClean()
             
             // Face detection prefetch (open-time only; never during playback)
             Task.detached(priority: .utility) {
@@ -366,6 +415,41 @@ struct ContentView: View {
             
         } catch {
             print("Error loading slideshow: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Save
+
+    @MainActor
+    private func beginSave() {
+        guard !slideshowState.isEmpty else { return }
+
+        let photos = slideshowState.photos
+        let docSettings = settings.toDocumentSettings()
+
+        Task { @MainActor in
+            // Snapshot any cached face rects we already have (do NOT run detection here).
+            let faceRects = await FaceDetectionCache.shared.snapshotFaceRectsByPath(for: photos.map(\.url))
+
+            // Create security-scoped bookmarks for each photo so we can reopen across app launches.
+            // This is best-effort; missing bookmarks just mean we may need the user to re-select those files later.
+            let bookmarksByPath: [String: String] = await Task.detached(priority: .utility) {
+                var result: [String: String] = [:]
+                for url in photos.map(\.url) {
+                    // Bookmark creation does NOT prompt; it only succeeds if we already have access.
+                    if let data = try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                        result[url.path] = data.base64EncodedString()
+                    }
+                }
+                return result
+            }.value
+
+            var fileDoc = SlideshowFileDocument(photos: photos, settings: docSettings)
+            fileDoc.document.faceRectsByPath = faceRects.isEmpty ? nil : faceRects
+            fileDoc.document.bookmarksByPath = bookmarksByPath.isEmpty ? nil : bookmarksByPath
+            exportDocument = fileDoc
+
+            isSaving = true
         }
     }
 }

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CoreGraphics
 
 /// Represents a saved slideshow document
 struct SlideshowDocument: Codable {
@@ -18,6 +19,15 @@ struct SlideshowDocument: Codable {
     /// Ordered list of photo file paths (stored as strings for portability)
     var photoPaths: [String]
     
+    /// Security-scoped bookmarks per photo path (base64-encoded).
+    /// Required for sandboxed access across app launches.
+    var bookmarksByPath: [String: String]?
+
+    /// Persisted face rectangles per photo path (normalized, Vision coordinate space).
+    /// Keyed by the same path strings used in `photoPaths`.
+    /// - Note: Missing entries mean "unknown" (may be detected later and saved on next save).
+    var faceRectsByPath: [String: [FaceRect]]?
+
     /// Global slideshow settings (placeholder for future features)
     var settings: Settings
     
@@ -25,7 +35,7 @@ struct SlideshowDocument: Codable {
     static let fileExtension = "softburn"
     
     /// Current document format version
-    static let currentVersion = 1
+    static let currentVersion = 3
     
     // MARK: - Nested Types
     
@@ -62,6 +72,32 @@ struct SlideshowDocument: Codable {
             case plain = "Plain"
         }
     }
+
+    /// Codable representation of a normalized CGRect (Vision-style).
+    struct FaceRect: Codable, Hashable {
+        var x: Double
+        var y: Double
+        var width: Double
+        var height: Double
+
+        init(x: Double, y: Double, width: Double, height: Double) {
+            self.x = x
+            self.y = y
+            self.width = width
+            self.height = height
+        }
+
+        init(rect: CGRect) {
+            self.x = rect.origin.x
+            self.y = rect.origin.y
+            self.width = rect.size.width
+            self.height = rect.size.height
+        }
+
+        var cgRect: CGRect {
+            CGRect(x: x, y: y, width: width, height: height)
+        }
+    }
     
     // MARK: - Initialization
     
@@ -69,6 +105,8 @@ struct SlideshowDocument: Codable {
         self.version = Self.currentVersion
         self.metadata = Metadata(title: title)
         self.photoPaths = photos.map { $0.url.path }
+        self.bookmarksByPath = nil
+        self.faceRectsByPath = nil
         self.settings = Settings()
     }
     
@@ -110,10 +148,25 @@ struct SlideshowDocument: Codable {
         var photos: [PhotoItem] = []
         
         for path in photoPaths {
-            let url = URL(fileURLWithPath: path)
+            var url = URL(fileURLWithPath: path)
+
+            // If a bookmark is present, resolve it and start security-scoped access.
+            if let bookmarkString = bookmarksByPath?[path],
+               let bookmarkData = Data(base64Encoded: bookmarkString) {
+                var isStale = false
+                if let resolved = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: [.withSecurityScope],
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    url = resolved
+                    _ = url.startAccessingSecurityScopedResource()
+                }
+            }
             
             // Check if file exists (silently skip missing files)
-            guard FileManager.default.fileExists(atPath: path) else {
+            guard FileManager.default.fileExists(atPath: url.path) else {
                 continue
             }
             

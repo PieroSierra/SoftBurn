@@ -8,6 +8,8 @@
 import Foundation
 import AppKit
 import SwiftUI
+import CoreGraphics
+import ImageIO
 
 /// Manages thumbnail generation and caching for performance
 actor ThumbnailCache {
@@ -60,12 +62,7 @@ actor ThumbnailCache {
                 return nil
             }
             
-            // Try loading with NSImage first (simpler, more reliable)
-            if let fullImage = NSImage(contentsOf: resolvedURL) {
-                return Self.scaleImage(fullImage, toMaxSize: self.thumbnailSize)
-            }
-            
-            // Fallback: Use ImageIO for efficient thumbnail generation
+            // Prefer ImageIO thumbnail generation to avoid triggering HDR decoding paths in NSImage that can spam logs.
             if let imageSource = CGImageSourceCreateWithURL(resolvedURL as CFURL, nil),
                let image = CGImageSourceCreateThumbnailAtIndex(
                 imageSource,
@@ -73,10 +70,20 @@ actor ThumbnailCache {
                 [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceThumbnailMaxPixelSize: self.thumbnailSize,
-                    kCGImageSourceCreateThumbnailWithTransform: true
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true
                 ] as CFDictionary
                ) {
+                // Force SDR by rendering into an sRGB bitmap context.
+                if let sdr = Self.renderToSDR(cgImage: image) {
+                    return NSImage(cgImage: sdr, size: NSSize(width: sdr.width, height: sdr.height))
+                }
                 return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+            }
+            
+            // Last-resort fallback: NSImage (may trigger HDR logs on some assets).
+            if let fullImage = NSImage(contentsOf: resolvedURL) {
+                return Self.scaleImage(fullImage, toMaxSize: self.thumbnailSize)
             }
             
             return nil
@@ -104,6 +111,32 @@ actor ThumbnailCache {
         scaledImage.unlockFocus()
         
         return scaledImage
+    }
+    
+    /// Render a CGImage into an 8-bit sRGB bitmap (SDR), to avoid HDR/gain-map decode paths for thumbnails.
+    private static func renderToSDR(cgImage: CGImage) -> CGImage? {
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else { return nil }
+        
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.union(CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue))
+        guard let ctx = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            return nil
+        }
+        
+        ctx.interpolationQuality = .high
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return ctx.makeImage()
     }
     
     /// Clear the cache (useful for memory management)

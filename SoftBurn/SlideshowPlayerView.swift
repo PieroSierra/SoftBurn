@@ -63,6 +63,11 @@ struct SlideshowPlayerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
+        // Any mouse click exits (same as "any key").
+        .contentShape(Rectangle())
+        .onTapGesture {
+            performSafeExit()
+        }
         .onAppear {
             NSCursor.hide()
             playerState.start()
@@ -118,6 +123,10 @@ class SlideshowPlayerState: ObservableObject {
     /// Ken Burns end targets (normalized offsets, where (0,0) is center; +y is down in view space).
     @Published var currentEndOffset: CGSize = .zero
     @Published var nextEndOffset: CGSize = .zero
+
+    /// Ken Burns start offsets (randomized per load/loop pass).
+    @Published var currentStartOffset: CGSize = .zero
+    @Published var nextStartOffset: CGSize = .zero
     
     /// Animation progress (0 = start, 1 = end of current slide)
     @Published var animationProgress: Double = 0
@@ -175,6 +184,8 @@ class SlideshowPlayerState: ObservableObject {
         nextFaceBoxes = []
         currentEndOffset = .zero
         nextEndOffset = .zero
+        currentStartOffset = .zero
+        nextStartOffset = .zero
         
         // Clear the image loader cache (fire and forget - no await needed)
         Task.detached { [imageLoader] in
@@ -233,6 +244,10 @@ class SlideshowPlayerState: ObservableObject {
             self.nextFaceBoxes = nextFaces
             self.currentEndOffset = Self.faceTargetOffset(from: currentFaces)
             self.nextEndOffset = Self.faceTargetOffset(from: nextFaces)
+
+            // Randomize start offsets per load (so the same photo can start differently each loop pass)
+            self.currentStartOffset = Self.randomStartOffset()
+            self.nextStartOffset = Self.randomStartOffset()
         }
     }
     
@@ -275,6 +290,7 @@ class SlideshowPlayerState: ObservableObject {
         currentImage = nextImage
         currentFaceBoxes = nextFaceBoxes
         currentEndOffset = nextEndOffset
+        currentStartOffset = nextStartOffset
         
         // Load the new next image
         let nextIndex = (currentIndex + 1) % photos.count
@@ -293,6 +309,7 @@ class SlideshowPlayerState: ObservableObject {
             guard !self.isStopped else { return }
             self.nextFaceBoxes = faces
             self.nextEndOffset = Self.faceTargetOffset(from: faces)
+            self.nextStartOffset = Self.randomStartOffset()
         }
     }
 
@@ -322,6 +339,26 @@ class SlideshowPlayerState: ObservableObject {
 
         return CGSize(width: x, height: y)
     }
+
+    // MARK: - Start offset randomization
+
+    private static func randomStartOffset() -> CGSize {
+        func randAxis() -> Double { Double.random(in: -0.20...0.20) }
+
+        var x = randAxis()
+        var y = randAxis()
+
+        // Ensure at least one axis has a meaningful offset (~10–20%).
+        if abs(x) < 0.10 && abs(y) < 0.10 {
+            if Bool.random() {
+                x = (Bool.random() ? 1 : -1) * Double.random(in: 0.10...0.20)
+            } else {
+                y = (Bool.random() ? 1 : -1) * Double.random(in: 0.10...0.20)
+            }
+        }
+
+        return CGSize(width: x, height: y)
+    }
     
     private func updateAnimationProgress(deltaTime: Double) {
         guard isRunning, !isStopped else { return }
@@ -336,6 +373,10 @@ class SlideshowPlayerState: ObservableObject {
         }
     }
 }
+
+// Swift 6: Timer callbacks are `@Sendable`; this type is main-actor isolated and only touched on the main actor.
+// Marking it unchecked-sendable avoids noisy warnings for safe usage patterns here.
+extension SlideshowPlayerState: @unchecked Sendable {}
 
 // MARK: - Transition Views
 
@@ -444,7 +485,7 @@ struct PanAndZoomTransitionView: View {
                 if let image = playerState.currentImage {
                     KenBurnsImageView(
                         image: image,
-                        idSeed: playerState.photos[playerState.currentIndex].url.absoluteString,
+                        startOffset: playerState.currentStartOffset,
                         endOffset: playerState.currentEndOffset,
                         useFaceTarget: zoomOnFaces,
                         faceBoxes: playerState.currentFaceBoxes,
@@ -459,10 +500,9 @@ struct PanAndZoomTransitionView: View {
                 
                 // Next image: only during transition; starts moving immediately.
                 if playerState.isTransitioning, let image = playerState.nextImage {
-                    let nextIndex = (playerState.currentIndex + 1) % max(1, playerState.photos.count)
                     KenBurnsImageView(
                         image: image,
-                        idSeed: playerState.photos[nextIndex].url.absoluteString,
+                        startOffset: playerState.nextStartOffset,
                         endOffset: playerState.nextEndOffset,
                         useFaceTarget: zoomOnFaces,
                         faceBoxes: playerState.nextFaceBoxes,
@@ -483,7 +523,7 @@ struct PanAndZoomTransitionView: View {
 
 private struct KenBurnsImageView: View {
     let image: NSImage
-    let idSeed: String
+    let startOffset: CGSize
     let endOffset: CGSize
     let useFaceTarget: Bool
     let faceBoxes: [CGRect]
@@ -503,10 +543,6 @@ private struct KenBurnsImageView: View {
         CGFloat(startScale + ((endScale - startScale) * progress))
     }
     
-    private var startOffset: CGSize {
-        KenBurnsDeterministic.offset(for: idSeed)
-    }
-
     private var effectiveEndOffset: CGSize {
         useFaceTarget ? endOffset : .zero
     }
@@ -571,36 +607,6 @@ private struct FaceBoxesOverlay: View {
             }
         }
         .allowsHitTesting(false)
-    }
-}
-
-private enum KenBurnsDeterministic {
-    /// Stable (cross-launch) 64-bit FNV-1a hash.
-    private static func fnv1a64(_ s: String) -> UInt64 {
-        let prime: UInt64 = 1099511628211
-        var hash: UInt64 = 14695981039346656037
-        for b in s.utf8 {
-            hash ^= UInt64(b)
-            hash &*= prime
-        }
-        return hash
-    }
-    
-    /// Deterministic offset in roughly ±(10–20%) range, drifting toward center.
-    static func offset(for seed: String) -> CGSize {
-        let h = fnv1a64(seed)
-        let xBits = Double(h & 0xFFFF) / 65535.0
-        let yBits = Double((h >> 16) & 0xFFFF) / 65535.0
-        
-        // Map to [-0.20, 0.20]
-        var x = (xBits * 0.40) - 0.20
-        var y = (yBits * 0.40) - 0.20
-        
-        // Ensure we don't end up too close to center (want a subtle pan).
-        if abs(x) < 0.10 { x = x < 0 ? -0.12 : 0.12 }
-        if abs(y) < 0.10 { y = y < 0 ? -0.12 : 0.12 }
-        
-        return CGSize(width: x, height: y)
     }
 }
 

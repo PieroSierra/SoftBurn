@@ -38,6 +38,7 @@ class SlideshowState: ObservableObject {
     /// Add photos to the slideshow
     func addPhotos(_ newPhotos: [PhotoItem]) {
         photos.append(contentsOf: newPhotos)
+        AppSessionState.shared.markDirty()
     }
     
     /// Replace all photos with a new set (used when opening a saved slideshow)
@@ -51,6 +52,11 @@ class SlideshowState: ObservableObject {
     func removeSelectedPhotos() {
         photos.removeAll { selectedPhotoIDs.contains($0.id) }
         selectedPhotoIDs.removeAll()
+        if photos.isEmpty {
+            AppSessionState.shared.markClean()
+        } else {
+            AppSessionState.shared.markDirty()
+        }
     }
     
     /// Toggle selection for a photo
@@ -108,6 +114,7 @@ class SlideshowState: ObservableObject {
         let photo = photos.remove(at: sourceIndex)
         let adjustedDestination = destinationIndex > sourceIndex ? destinationIndex - 1 : destinationIndex
         photos.insert(photo, at: min(adjustedDestination, photos.count))
+        AppSessionState.shared.markDirty()
     }
     
     /// Move a photo by ID to a new position relative to the target photo
@@ -130,6 +137,7 @@ class SlideshowState: ObservableObject {
         // Moving left: insert BEFORE the target
         let insertIndex = movingRight ? newTargetIndex + 1 : newTargetIndex
         photos.insert(photo, at: min(insertIndex, photos.count))
+        AppSessionState.shared.markDirty()
     }
     
     /// Move multiple photos by ID to a new position relative to the target photo
@@ -167,6 +175,7 @@ class SlideshowState: ObservableObject {
         // Moving left: insert BEFORE the target
         let insertIndex = movingRight ? newTargetIndex + 1 : newTargetIndex
         photos.insert(contentsOf: photosToMove, at: min(insertIndex, photos.count))
+        AppSessionState.shared.markDirty()
     }
 }
 
