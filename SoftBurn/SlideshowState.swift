@@ -58,6 +58,18 @@ class SlideshowState: ObservableObject {
             AppSessionState.shared.markDirty()
         }
     }
+
+    /// Remove a single photo by ID (never deletes the original file).
+    func removePhoto(withID id: UUID) {
+        photos.removeAll { $0.id == id }
+        selectedPhotoIDs.remove(id)
+
+        if photos.isEmpty {
+            AppSessionState.shared.markClean()
+        } else {
+            AppSessionState.shared.markDirty()
+        }
+    }
     
     /// Toggle selection for a photo
     func toggleSelection(for photoID: UUID) {

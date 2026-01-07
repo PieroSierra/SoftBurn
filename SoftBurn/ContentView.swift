@@ -37,50 +37,72 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var pendingOpenURL: URL?
     @State private var isPlayingSlideshow = false
+    @State private var isShowingViewer = false
+    @State private var viewerStartID: UUID?
+    @State private var mainWindowSize: CGSize = CGSize(width: 1000, height: 700)
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Toolbar
-            toolbar
-            
-            Divider()
-            
-            // Main content area
-            if slideshowState.isEmpty {
-                EmptyStateView { urls in
-                    Task {
-                        await importPhotos(from: urls)
-                    }
-                }
-            } else {
-                PhotoGridView(
-                    photos: slideshowState.photos,
-                    selectedPhotoIDs: slideshowState.selectedPhotoIDs,
-                    onPhotoTap: { photoID, isCommandKey, isShiftKey in
-                        handlePhotoTap(photoID: photoID, isCommandKey: isCommandKey, isShiftKey: isShiftKey)
-                    },
-                    onDrop: { urls in
+        ZStack {
+            VStack(spacing: 0) {
+                // Toolbar
+                toolbar
+                
+                Divider()
+                
+                // Main content area
+                if slideshowState.isEmpty {
+                    EmptyStateView { urls in
                         Task {
                             await importPhotos(from: urls)
                         }
-                    },
-                    onReorder: { sourceIDs, targetID in
-                        slideshowState.movePhotos(withIDs: sourceIDs, toPositionOf: targetID)
-                    },
-                    onDragStart: { photoID in
-                        // Select the dragged item if not already selected
-                        if !slideshowState.selectedPhotoIDs.contains(photoID) {
+                    }
+                } else {
+                    PhotoGridView(
+                        photos: slideshowState.photos,
+                        selectedPhotoIDs: slideshowState.selectedPhotoIDs,
+                        onPhotoTap: { photoID, isCommandKey, isShiftKey in
+                            handlePhotoTap(photoID: photoID, isCommandKey: isCommandKey, isShiftKey: isShiftKey)
+                        },
+                        onOpenViewer: { photoID in
+                            openViewer(for: photoID)
+                        },
+                        onDrop: { urls in
+                            Task {
+                                await importPhotos(from: urls)
+                            }
+                        },
+                        onReorder: { sourceIDs, targetID in
+                            slideshowState.movePhotos(withIDs: sourceIDs, toPositionOf: targetID)
+                        },
+                        onDragStart: { photoID in
+                            // Select the dragged item if not already selected
+                            if !slideshowState.selectedPhotoIDs.contains(photoID) {
+                                slideshowState.deselectAll()
+                                slideshowState.toggleSelection(for: photoID)
+                            }
+                        },
+                        onDeselectAll: {
                             slideshowState.deselectAll()
-                            slideshowState.toggleSelection(for: photoID)
                         }
-                    },
-                    onDeselectAll: {
-                        slideshowState.deselectAll()
+                    )
+                }
+            }
+            .frame(minWidth: 800, minHeight: 600)
+            
+            // Full-screen overlay viewer (no sheet chrome)
+            if isShowingViewer, let startID = viewerStartID {
+                PhotoViewerSheet(
+                    slideshowState: slideshowState,
+                    startingPhotoID: startID,
+                    onDismiss: {
+                        isShowingViewer = false
+                        viewerStartID = nil
                     }
                 )
+                .transition(.opacity)
+                .zIndex(1000)
             }
         }
-        .frame(minWidth: 800, minHeight: 600)
         // Single file importer for both photos and slideshows
         .fileImporter(
             isPresented: $isImporting,
@@ -163,6 +185,15 @@ struct ContentView: View {
             .keyboardShortcut("o", modifiers: .command)
             .opacity(0)
         )
+        // Space: open viewer for selected photo
+        .background(
+            Button("") {
+                openViewerForSelection()
+            }
+            .keyboardShortcut(.space, modifiers: [])
+            .opacity(0)
+            .disabled(!slideshowState.hasSelection)
+        )
         // Launch slideshow when isPlayingSlideshow becomes true
         .onChange(of: isPlayingSlideshow) { _, isPlaying in
             if isPlaying {
@@ -182,6 +213,8 @@ struct ContentView: View {
             if window.delegate !== MainWindowDelegate.shared {
                 window.delegate = MainWindowDelegate.shared
             }
+            // Track window size for large viewer presentation.
+            mainWindowSize = window.frame.size
         })
         // Mark dirty on settings changes
         .onChange(of: settings.transitionStyle) { session.markDirty() }
@@ -189,6 +222,10 @@ struct ContentView: View {
         .onChange(of: settings.zoomOnFaces) { session.markDirty() }
         .onChange(of: settings.backgroundColor) { session.markDirty() }
         .onChange(of: settings.slideDuration) { session.markDirty() }
+        // Delete/Backspace: remove selection (grid)
+        .onDeleteCommand {
+            slideshowState.removeSelectedPhotos()
+        }
     }
     
     // MARK: - Slideshow Window
@@ -360,6 +397,28 @@ struct ContentView: View {
         }
         
         lastSelectedIndex = currentIndex
+    }
+
+    // MARK: - Viewer
+
+    private func openViewer(for photoID: UUID) {
+        guard !slideshowState.photos.isEmpty else { return }
+        viewerStartID = photoID
+        isShowingViewer = true
+    }
+
+    private func openViewerForSelection() {
+        guard slideshowState.hasSelection else { return }
+
+        // Prefer the last clicked index if available; otherwise use first selected in slideshow order.
+        if let idx = lastSelectedIndex, idx < slideshowState.photos.count {
+            openViewer(for: slideshowState.photos[idx].id)
+            return
+        }
+
+        if let firstSelected = slideshowState.photos.first(where: { slideshowState.selectedPhotoIDs.contains($0.id) }) {
+            openViewer(for: firstSelected.id)
+        }
     }
     
     // MARK: - Save/Open

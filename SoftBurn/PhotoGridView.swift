@@ -13,6 +13,7 @@ struct PhotoGridView: View {
     let photos: [PhotoItem]
     let selectedPhotoIDs: Set<UUID>
     let onPhotoTap: (UUID, Bool, Bool) -> Void // photoID, isCommandKey, isShiftKey
+    let onOpenViewer: (UUID) -> Void
     let onDrop: ([URL]) -> Void
     let onReorder: ([UUID], UUID) -> Void // sourceIDs (all selected), targetID
     let onDragStart: (UUID) -> Void // Called when drag starts to select the item
@@ -46,6 +47,11 @@ struct PhotoGridView: View {
                             let isCommandKey = event?.modifierFlags.contains(.command) == true
                             let isShiftKey = event?.modifierFlags.contains(.shift) == true
                             onPhotoTap(photo.id, isCommandKey, isShiftKey)
+                        }
+                        .onTapGesture(count: 2) {
+                            // Double-click: open viewer for clicked photo (in slideshow order)
+                            onPhotoTap(photo.id, false, false)
+                            onOpenViewer(photo.id)
                         }
                         .onAppear {
                             // Pre-cache thumbnails for drag previews
