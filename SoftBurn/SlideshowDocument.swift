@@ -16,8 +16,11 @@ struct SlideshowDocument: Codable {
     /// Document metadata
     var metadata: Metadata
     
-    /// Ordered list of photo file paths (stored as strings for portability)
+    /// Ordered list of photo file paths (legacy; v1-v3)
     var photoPaths: [String]
+
+    /// Ordered list of media items (v4+). If present, this is the authoritative list.
+    var mediaItems: [MediaEntry]?
     
     /// Security-scoped bookmarks per photo path (base64-encoded).
     /// Required for sandboxed access across app launches.
@@ -35,7 +38,7 @@ struct SlideshowDocument: Codable {
     static let fileExtension = "softburn"
     
     /// Current document format version
-    static let currentVersion = 3
+    static let currentVersion = 4
     
     // MARK: - Nested Types
     
@@ -57,6 +60,8 @@ struct SlideshowDocument: Codable {
         var zoomOnFaces: Bool
         var backgroundColor: String // Hex color string
         var slideDuration: Double // seconds per slide
+        var playVideosWithSound: Bool
+        var playVideosInFull: Bool
         
         init() {
             self.shuffle = false
@@ -64,6 +69,19 @@ struct SlideshowDocument: Codable {
             self.zoomOnFaces = true
             self.backgroundColor = "#000000"
             self.slideDuration = 5.0
+            self.playVideosWithSound = false
+            self.playVideosInFull = false
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.shuffle = (try? c.decode(Bool.self, forKey: .shuffle)) ?? false
+            self.transitionStyle = (try? c.decode(TransitionStyle.self, forKey: .transitionStyle)) ?? .panAndZoom
+            self.zoomOnFaces = (try? c.decode(Bool.self, forKey: .zoomOnFaces)) ?? true
+            self.backgroundColor = (try? c.decode(String.self, forKey: .backgroundColor)) ?? "#000000"
+            self.slideDuration = (try? c.decode(Double.self, forKey: .slideDuration)) ?? 5.0
+            self.playVideosWithSound = (try? c.decode(Bool.self, forKey: .playVideosWithSound)) ?? false
+            self.playVideosInFull = (try? c.decode(Bool.self, forKey: .playVideosInFull)) ?? false
         }
         
         enum TransitionStyle: String, Codable, CaseIterable {
@@ -71,6 +89,11 @@ struct SlideshowDocument: Codable {
             case crossFade = "Cross Fade"
             case plain = "Plain"
         }
+    }
+
+    struct MediaEntry: Codable, Hashable {
+        var kind: MediaItem.Kind
+        var path: String
     }
 
     /// Codable representation of a normalized CGRect (Vision-style).
@@ -101,13 +124,19 @@ struct SlideshowDocument: Codable {
     
     // MARK: - Initialization
     
-    init(photos: [PhotoItem], title: String = "Untitled Slideshow") {
+    init(photos: [MediaItem], title: String = "Untitled Slideshow") {
         self.version = Self.currentVersion
         self.metadata = Metadata(title: title)
-        self.photoPaths = photos.map { $0.url.path }
+        self.photoPaths = photos.filter { $0.kind == .photo }.map { $0.url.path } // legacy compatibility
+        self.mediaItems = photos.map { MediaEntry(kind: $0.kind, path: $0.url.path) }
         self.bookmarksByPath = nil
         self.faceRectsByPath = nil
         self.settings = Settings()
+    }
+
+    // Convenience alias for clarity
+    init(items: [MediaItem], title: String = "Untitled Slideshow") {
+        self.init(photos: items, title: title)
     }
     
     // MARK: - Serialization
@@ -144,14 +173,15 @@ struct SlideshowDocument: Codable {
     // MARK: - Photo Loading
     
     /// Convert stored paths back to PhotoItems, filtering out missing files
-    func loadPhotos() -> [PhotoItem] {
-        var photos: [PhotoItem] = []
-        
-        for path in photoPaths {
-            var url = URL(fileURLWithPath: path)
+    func loadMediaItems() -> [MediaItem] {
+        let entries: [MediaEntry] = mediaItems ?? photoPaths.map { MediaEntry(kind: .photo, path: $0) }
+        var items: [MediaItem] = []
+
+        for entry in entries {
+            var url = URL(fileURLWithPath: entry.path)
 
             // If a bookmark is present, resolve it and start security-scoped access.
-            if let bookmarkString = bookmarksByPath?[path],
+            if let bookmarkString = bookmarksByPath?[entry.path],
                let bookmarkData = Data(base64Encoded: bookmarkString) {
                 var isStale = false
                 if let resolved = try? URL(
@@ -170,15 +200,17 @@ struct SlideshowDocument: Codable {
                 continue
             }
             
-            // Verify it's still an image file
-            guard PhotoItem.isImageFile(url) else {
-                continue
+            switch entry.kind {
+            case .photo:
+                guard MediaItem.isImageFile(url) else { continue }
+                items.append(MediaItem(url: url, kind: .photo))
+            case .video:
+                guard MediaItem.isVideoFile(url) else { continue }
+                items.append(MediaItem(url: url, kind: .video))
             }
-            
-            photos.append(PhotoItem(url: url))
         }
-        
-        return photos
+
+        return items
     }
 }
 

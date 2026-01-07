@@ -106,7 +106,7 @@ struct ContentView: View {
         // Single file importer for both photos and slideshows
         .fileImporter(
             isPresented: $isImporting,
-            allowedContentTypes: importMode == .photos ? [.folder, .image] : [.softburn],
+            allowedContentTypes: importMode == .photos ? [.folder, .image, .movie] : [.softburn],
             allowsMultipleSelection: importMode == .photos
         ) { result in
             switch importMode {
@@ -370,7 +370,7 @@ struct ContentView: View {
         
         // Face detection prefetch (import-time only; never during playback)
         Task.detached(priority: .utility) {
-            await FaceDetectionCache.shared.prefetch(urls: photos.map(\.url))
+            await FaceDetectionCache.shared.prefetch(urls: photos.filter { $0.kind == .photo }.map(\.url))
         }
     }
     
@@ -451,7 +451,7 @@ struct ContentView: View {
             defer { url.stopAccessingSecurityScopedResource() }
             
             let document = try SlideshowDocument.load(from: url)
-            let photos = document.loadPhotos()
+            let photos = document.loadMediaItems()
 
             // Hydrate face cache from document (trusted; no re-detection for these entries)
             Task.detached(priority: .utility) {
@@ -469,7 +469,7 @@ struct ContentView: View {
             
             // Face detection prefetch (open-time only; never during playback)
             Task.detached(priority: .utility) {
-                await FaceDetectionCache.shared.prefetch(urls: photos.map(\.url))
+                await FaceDetectionCache.shared.prefetch(urls: photos.filter { $0.kind == .photo }.map(\.url))
             }
             
         } catch {
@@ -488,7 +488,7 @@ struct ContentView: View {
 
         Task { @MainActor in
             // Snapshot any cached face rects we already have (do NOT run detection here).
-            let faceRects = await FaceDetectionCache.shared.snapshotFaceRectsByPath(for: photos.map(\.url))
+            let faceRects = await FaceDetectionCache.shared.snapshotFaceRectsByPath(for: photos.filter { $0.kind == .photo }.map(\.url))
 
             // Create security-scoped bookmarks for each photo so we can reopen across app launches.
             // This is best-effort; missing bookmarks just mean we may need the user to re-select those files later.
@@ -522,7 +522,7 @@ struct SlideshowFileDocument: FileDocument {
     
     var document: SlideshowDocument
     
-    init(photos: [PhotoItem], settings: SlideshowDocument.Settings? = nil) {
+    init(photos: [MediaItem], settings: SlideshowDocument.Settings? = nil) {
         self.document = SlideshowDocument(photos: photos)
         if let settings = settings {
             self.document.settings = settings

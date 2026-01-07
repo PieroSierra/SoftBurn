@@ -39,6 +39,25 @@ struct SettingsPopoverView: View {
             
           
             
+           // Slide Duration
+            settingsRow(label: "Slide duration") {
+                HStack(spacing: 8) {
+                    Slider(value: slideDurationBinding, in: 1...15)
+                        .frame(width: 100)
+                    Text(String(format: "%.1fs", settings.slideDuration))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .frame(width: 36, alignment: .trailing)
+                }
+            }
+            
+            
+            // Shuffle
+            settingsRow(label: "") {
+                Toggle("Shuffle slides", isOn: $settings.shuffle)
+                    .toggleStyle(.checkbox)
+            }
+            
             // Background Color
             settingsRow(label: "Background") {
                 Button(action: { showColorPicker.toggle() }) {
@@ -57,21 +76,16 @@ struct SettingsPopoverView: View {
             }
             
             
-            // Slide Duration
-            settingsRow(label: "Slide duration") {
-                HStack(spacing: 8) {
-                    Slider(value: slideDurationBinding, in: 1...15)
-                        .frame(width: 100)
-                    Text(String(format: "%.1fs", settings.slideDuration))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .frame(width: 36, alignment: .trailing)
-                }
+            Divider()
+                .padding(.vertical, 4)
+            
+            settingsRow(label: "Videos") {
+                Toggle("Play with sound", isOn: $settings.playVideosWithSound)
+                    .toggleStyle(.checkbox)
             }
             
-            // Shuffle
             settingsRow(label: "") {
-                Toggle("Shuffle photos", isOn: $settings.shuffle)
+                Toggle("Play in full", isOn: $settings.playVideosInFull)
                     .toggleStyle(.checkbox)
             }
             

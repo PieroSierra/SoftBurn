@@ -10,12 +10,13 @@ import UniformTypeIdentifiers
 
 /// A view that displays a photo thumbnail with async loading
 struct ThumbnailView: View {
-    let photo: PhotoItem
+    let photo: MediaItem
     let isSelected: Bool
     let onTap: () -> Void
     
     @State private var thumbnail: NSImage?
     @State private var isLoading = true
+    @State private var videoDurationText: String?
     
     var body: some View {
         GeometryReader { geometry in
@@ -51,6 +52,18 @@ struct ThumbnailView: View {
                             .fill(Color.black.opacity(0.5))
                     )*/
                     .padding(8)
+
+                // Video duration overlay (bottom-right)
+                if photo.kind == .video, let t = videoDurationText {
+                    Text(t)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(8)
+                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottomTrailing)
+                }
                 
                 // Selection outline
                 if isSelected {
@@ -84,6 +97,12 @@ struct ThumbnailView: View {
         }
         
         thumbnail = await ThumbnailCache.shared.thumbnail(for: photo.url)
+
+        if photo.kind == .video {
+            videoDurationText = await VideoMetadataCache.shared.durationString(for: photo.url)
+        } else {
+            videoDurationText = nil
+        }
     }
 }
 

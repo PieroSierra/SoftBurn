@@ -12,7 +12,7 @@ import Combine
 /// Manages the state of the slideshow
 @MainActor
 class SlideshowState: ObservableObject {
-    @Published var photos: [PhotoItem] = []
+    @Published var photos: [MediaItem] = []
     @Published var selectedPhotoIDs: Set<UUID> = []
     
     /// Total number of photos
@@ -36,13 +36,13 @@ class SlideshowState: ObservableObject {
     }
     
     /// Add photos to the slideshow
-    func addPhotos(_ newPhotos: [PhotoItem]) {
+    func addPhotos(_ newPhotos: [MediaItem]) {
         photos.append(contentsOf: newPhotos)
         AppSessionState.shared.markDirty()
     }
     
     /// Replace all photos with a new set (used when opening a saved slideshow)
-    func replacePhotos(with newPhotos: [PhotoItem]) {
+    func replacePhotos(with newPhotos: [MediaItem]) {
         photos = newPhotos
         selectedPhotoIDs.removeAll()
     }

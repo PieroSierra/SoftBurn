@@ -8,31 +8,44 @@
 import Foundation
 import UniformTypeIdentifiers
 
-/// Represents a photo in the slideshow
-struct PhotoItem: Identifiable, Hashable, Codable, Sendable {
+/// Represents a media item in the slideshow (photo or video).
+struct MediaItem: Identifiable, Hashable, Codable, Sendable {
+    enum Kind: String, Codable, Sendable {
+        case photo
+        case video
+    }
+
     let id: UUID
     let url: URL
-    
-    init(url: URL) {
+    let kind: Kind
+
+    init(url: URL, kind: Kind) {
         self.id = UUID()
         self.url = url
+        self.kind = kind
     }
-    
+
     /// File name for display
     var fileName: String {
         url.lastPathComponent
     }
 }
 
-/// Supported image file types - helper functions are nonisolated for background thread use
-extension PhotoItem {
-    static let supportedExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "heic", "heif", "webp"]
-    
-    /// Check if a URL points to an image file (safe to call from any thread)
-    static func isImageFile(_ url: URL) -> Bool {
-        // Use extension check which is thread-safe
+/// Supported media file types - helper functions are safe to call from any thread.
+extension MediaItem {
+    // Swift 6: if the project uses "Default actor = MainActor", mark these explicitly nonisolated
+    // so they can be used from background threads/actors (thumbnail generation, discovery, etc).
+    nonisolated static let supportedImageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "heic", "heif", "webp"]
+    nonisolated static let supportedVideoExtensions = ["mov", "mp4", "m4v"]
+
+    nonisolated static func isImageFile(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
-        return supportedExtensions.contains(ext)
+        return supportedImageExtensions.contains(ext)
+    }
+
+    nonisolated static func isVideoFile(_ url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        return supportedVideoExtensions.contains(ext)
     }
 }
 

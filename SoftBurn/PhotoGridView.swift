@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 
 /// Grid view displaying photo thumbnails
 struct PhotoGridView: View {
-    let photos: [PhotoItem]
+    let photos: [MediaItem]
     let selectedPhotoIDs: Set<UUID>
     let onPhotoTap: (UUID, Bool, Bool) -> Void // photoID, isCommandKey, isShiftKey
     let onOpenViewer: (UUID) -> Void

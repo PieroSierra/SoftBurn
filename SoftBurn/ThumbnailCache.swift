@@ -10,6 +10,7 @@ import AppKit
 import SwiftUI
 import CoreGraphics
 import ImageIO
+@preconcurrency import AVFoundation
 
 /// Manages thumbnail generation and caching for performance
 actor ThumbnailCache {
@@ -62,6 +63,39 @@ actor ThumbnailCache {
                 return nil
             }
             
+            // Video thumbnail
+            if MediaItem.isVideoFile(resolvedURL) {
+                let asset = AVURLAsset(url: resolvedURL)
+                // Swift 6: AVAssetImageGenerator is not Sendable; wrap it to avoid Sendable capture warnings.
+                final class GeneratorBox: @unchecked Sendable {
+                    let generator: AVAssetImageGenerator
+                    init(_ g: AVAssetImageGenerator) { self.generator = g }
+                }
+
+                let generatorBox = GeneratorBox(AVAssetImageGenerator(asset: asset))
+                generatorBox.generator.appliesPreferredTrackTransform = true
+                generatorBox.generator.maximumSize = CGSize(width: self.thumbnailSize, height: self.thumbnailSize)
+                let cg: CGImage? = await withCheckedContinuation { continuation in
+                    let times = [NSValue(time: .zero)]
+                    generatorBox.generator.generateCGImagesAsynchronously(forTimes: times) { _, image, _, result, _ in
+                        switch result {
+                        case .succeeded:
+                            continuation.resume(returning: image)
+                        default:
+                            continuation.resume(returning: nil)
+                        }
+                        generatorBox.generator.cancelAllCGImageGeneration()
+                    }
+                }
+                if let cg {
+                    if let sdr = Self.renderToSDR(cgImage: cg) {
+                        return NSImage(cgImage: sdr, size: NSSize(width: sdr.width, height: sdr.height))
+                    }
+                    return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                }
+                return nil
+            }
+
             // Prefer ImageIO thumbnail generation to avoid triggering HDR decoding paths in NSImage that can spam logs.
             if let imageSource = CGImageSourceCreateWithURL(resolvedURL as CFURL, nil),
                let image = CGImageSourceCreateThumbnailAtIndex(

@@ -4,15 +4,21 @@
 //
 
 import SwiftUI
+import AVKit
 
 struct PhotoViewerSheet: View {
     @ObservedObject var slideshowState: SlideshowState
     let startingPhotoID: UUID
     let onDismiss: () -> Void
 
+    @ObservedObject private var settings = SlideshowSettings.shared
+
     @State private var currentIndex: Int = 0
     @State private var image: NSImage?
     @State private var isLoading: Bool = false
+    @State private var player: AVPlayer?
+    @State private var endObserver: NSObjectProtocol?
+    @State private var videoPresentationSize: CGSize?
 
     @State private var scale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
@@ -37,15 +43,17 @@ struct PhotoViewerSheet: View {
         .onAppear {
             resolveStartingIndex()
             installKeyMonitor()
-            Task { await loadCurrentImage() }
+            Task { await loadCurrentMedia() }
         }
         .onDisappear {
             removeKeyMonitor()
+            removeEndObserver()
+            player?.pause()
         }
         .onChange(of: slideshowState.photos.map(\.id)) { _, _ in
             // Keep index valid if photos are removed.
             clampIndexOrDismiss()
-            Task { await loadCurrentImage() }
+            Task { await loadCurrentMedia() }
         }
     }
 
@@ -67,7 +75,7 @@ struct PhotoViewerSheet: View {
         let cornerRadius: CGFloat = 18
 
         ZStack {
-            if isLoading, image == nil {
+            if isLoading, image == nil, player == nil {
                 ProgressView()
                     .tint(.white)
             } else if let image {
@@ -76,6 +84,12 @@ struct PhotoViewerSheet: View {
                     scale: $scale,
                     offset: $offset
                 )
+            } else if let player {
+                ViewerAVPlayerView(player: player)
+                    .onAppear {
+                        // Start playback immediately (muted by default via global setting).
+                        player.play()
+                    }
             } else {
                 Image(systemName: "photo")
                     .foregroundColor(.white.opacity(0.7))
@@ -91,10 +105,16 @@ struct PhotoViewerSheet: View {
                 .help("Close")
         }
         .overlay(alignment: .topTrailing) {
-            hudButton(systemName: "trash") { removeCurrentPhoto() }
+            HStack(spacing: 8) {
+                if currentItem?.kind == .video {
+                    // Use native AVPlayerView controls (on hover) instead of duplicating controls.
+                }
+
+                hudButton(systemName: "trash") { removeCurrentPhoto() }
+                    .help("Remove from slideshow (does not delete files)")
+                    .disabled(slideshowState.photos.isEmpty)
+            }
                 .padding(12)
-                .help("Remove from slideshow (does not delete files)")
-                .disabled(slideshowState.photos.isEmpty)
         }
         .overlay(alignment: .bottom) {
             if !slideshowState.photos.isEmpty {
@@ -115,11 +135,16 @@ struct PhotoViewerSheet: View {
         let maxH = max(200, containerSize.height - 80)
         let maxSize = CGSize(width: maxW, height: maxH)
 
-        guard let image else {
-            // Reasonable placeholder while loading.
-            return CGSize(width: min(520, maxSize.width), height: min(360, maxSize.height))
+        if let image {
+            return fittedSize(container: maxSize, image: image.size)
         }
-        return fittedSize(container: maxSize, image: image.size)
+
+        if let s = videoPresentationSize, s.width > 0, s.height > 0 {
+            return fittedSize(container: maxSize, image: s)
+        }
+
+        // Placeholder while loading.
+        return CGSize(width: min(520, maxSize.width), height: min(360, maxSize.height))
     }
 
     private func resolveStartingIndex() {
@@ -150,14 +175,14 @@ struct PhotoViewerSheet: View {
         guard !slideshowState.photos.isEmpty else { return }
         currentIndex = (currentIndex - 1 + slideshowState.photos.count) % slideshowState.photos.count
         resetTransform()
-        Task { await loadCurrentImage() }
+        Task { await loadCurrentMedia() }
     }
 
     private func showNext() {
         guard !slideshowState.photos.isEmpty else { return }
         currentIndex = (currentIndex + 1) % slideshowState.photos.count
         resetTransform()
-        Task { await loadCurrentImage() }
+        Task { await loadCurrentMedia() }
     }
 
     private func removeCurrentPhoto() {
@@ -182,24 +207,62 @@ struct PhotoViewerSheet: View {
         }
 
         resetTransform()
-        Task { await loadCurrentImage() }
+        Task { await loadCurrentMedia() }
     }
 
-    private func loadCurrentImage() async {
+    private var currentItem: MediaItem? {
+        guard currentIndex >= 0, currentIndex < slideshowState.photos.count else { return nil }
+        return slideshowState.photos[currentIndex]
+    }
+
+    private func loadCurrentMedia() async {
         guard !slideshowState.photos.isEmpty else {
             await MainActor.run {
                 image = nil
+                player = nil
                 isLoading = false
             }
             return
         }
 
-        let url = slideshowState.photos[currentIndex].url
+        let item = slideshowState.photos[currentIndex]
         await MainActor.run { isLoading = true }
-        let loaded = await loader.load(url: url)
+
+        // Stop previous video
         await MainActor.run {
-            self.image = loaded
-            self.isLoading = false
+            removeEndObserver()
+            player?.pause()
+            player = nil
+            videoPresentationSize = nil
+        }
+
+        switch item.kind {
+        case .photo:
+            let loaded = await loader.load(url: item.url)
+            await MainActor.run {
+                self.image = loaded
+                self.isLoading = false
+            }
+        case .video:
+            await MainActor.run {
+                self.image = nil
+            }
+
+            // Create player on main
+            await MainActor.run {
+                let playerItem = AVPlayerItem(url: item.url)
+                let p = AVPlayer(playerItem: playerItem)
+                p.isMuted = !settings.playVideosWithSound
+                self.player = p
+                installEndObserver(for: playerItem)
+                self.isLoading = false
+            }
+            
+            // Fetch presentation size (for sizing the photo card like photos).
+            let size = await VideoMetadataCache.shared.presentationSize(for: item.url)
+            await MainActor.run {
+                self.videoPresentationSize = size
+            }
         }
     }
 
@@ -229,6 +292,12 @@ struct PhotoViewerSheet: View {
             case 124: // Right arrow
                 showNext()
                 return nil
+            case 49: // Space
+                if currentItem?.kind == .video {
+                    togglePlayPause()
+                    return nil
+                }
+                return event
             case 51, 117: // Delete, Forward Delete
                 removeCurrentPhoto()
                 return nil
@@ -242,6 +311,35 @@ struct PhotoViewerSheet: View {
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
+        }
+    }
+
+    private func togglePlayPause() {
+        guard let player else { return }
+        if player.timeControlStatus == .playing {
+            player.pause()
+        } else {
+            player.play()
+        }
+    }
+
+    private func installEndObserver(for item: AVPlayerItem) {
+        removeEndObserver()
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { _ in
+            // Freeze on last frame
+            self.player?.pause()
+            item.seek(to: item.duration, toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: nil)
+        }
+    }
+
+    private func removeEndObserver() {
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+            self.endObserver = nil
         }
     }
 }

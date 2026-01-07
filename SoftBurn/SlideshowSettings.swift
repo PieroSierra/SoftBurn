@@ -20,6 +20,8 @@ class SlideshowSettings: ObservableObject {
     @AppStorage("settings.zoomOnFaces") private var storedZoomOnFaces: Bool = true
     @AppStorage("settings.backgroundColor") private var storedBackgroundColor: String = "#000000"
     @AppStorage("settings.slideDuration") private var storedSlideDuration: Double = 5.0
+    @AppStorage("settings.playVideosWithSound") private var storedPlayVideosWithSound: Bool = false
+    @AppStorage("settings.playVideosInFull") private var storedPlayVideosInFull: Bool = false
     
 #if DEBUG
     @AppStorage("settings.debugShowFaces") private var storedDebugShowFaces: Bool = false
@@ -47,6 +49,14 @@ class SlideshowSettings: ObservableObject {
         didSet { storedSlideDuration = slideDuration }
     }
     
+    @Published var playVideosWithSound: Bool = false {
+        didSet { storedPlayVideosWithSound = playVideosWithSound }
+    }
+    
+    @Published var playVideosInFull: Bool = false {
+        didSet { storedPlayVideosInFull = playVideosInFull }
+    }
+    
     /// Debug-only: draw detected face rectangles over the slideshow image.
     /// This property exists in Release too (always false), but the UI toggle is only shown in DEBUG builds.
 #if DEBUG
@@ -70,6 +80,8 @@ class SlideshowSettings: ObservableObject {
         zoomOnFaces = storedZoomOnFaces
         backgroundColor = Color(hex: storedBackgroundColor) ?? .black
         slideDuration = storedSlideDuration
+        playVideosWithSound = storedPlayVideosWithSound
+        playVideosInFull = storedPlayVideosInFull
 #if DEBUG
         debugShowFaces = storedDebugShowFaces
 #endif
@@ -85,6 +97,8 @@ class SlideshowSettings: ObservableObject {
         settings.zoomOnFaces = zoomOnFaces
         settings.backgroundColor = storedBackgroundColor
         settings.slideDuration = slideDuration
+        settings.playVideosWithSound = playVideosWithSound
+        settings.playVideosInFull = playVideosInFull
         return settings
     }
     
@@ -95,6 +109,8 @@ class SlideshowSettings: ObservableObject {
         zoomOnFaces = settings.zoomOnFaces
         backgroundColor = Color(hex: settings.backgroundColor) ?? .black
         slideDuration = settings.slideDuration
+        playVideosWithSound = settings.playVideosWithSound
+        playVideosInFull = settings.playVideosInFull
     }
 }
 

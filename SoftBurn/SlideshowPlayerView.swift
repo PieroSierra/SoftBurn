@@ -8,23 +8,24 @@
 import SwiftUI
 import AppKit
 import Combine
+import AVKit
 
 /// Full-screen slideshow player view
 struct SlideshowPlayerView: View {
-    let photos: [PhotoItem]
+    let photos: [MediaItem]
     let settings: SlideshowSettings
     let onExit: () -> Void
     
     @StateObject private var playerState: SlideshowPlayerState
     @State private var isExiting = false
     
-    init(photos: [PhotoItem], settings: SlideshowSettings, onExit: @escaping () -> Void) {
+    init(photos: [MediaItem], settings: SlideshowSettings, onExit: @escaping () -> Void) {
         self.photos = photos
         self.settings = settings
         self.onExit = onExit
         
         // Create playback list (shuffle if needed)
-        let playbackPhotos: [PhotoItem]
+        let playbackPhotos: [MediaItem]
         if settings.shuffle {
             playbackPhotos = photos.shuffled()
         } else {
@@ -34,7 +35,9 @@ struct SlideshowPlayerView: View {
         _playerState = StateObject(wrappedValue: SlideshowPlayerState(
             photos: playbackPhotos,
             slideDuration: settings.slideDuration,
-            transitionStyle: settings.transitionStyle
+            transitionStyle: settings.transitionStyle,
+            playVideosWithSound: settings.playVideosWithSound,
+            playVideosInFull: settings.playVideosInFull
         ))
     }
     
@@ -105,9 +108,11 @@ struct SlideshowPlayerView: View {
 /// Manages slideshow playback state and timing
 @MainActor
 class SlideshowPlayerState: ObservableObject {
-    let photos: [PhotoItem]
+    let photos: [MediaItem]
     let slideDuration: Double
     let transitionStyle: SlideshowDocument.Settings.TransitionStyle
+    let playVideosWithSound: Bool
+    let playVideosInFull: Bool
     
     /// Fixed transition duration (2 seconds as per spec)
     static let transitionDuration: Double = 2.0
@@ -115,6 +120,11 @@ class SlideshowPlayerState: ObservableObject {
     @Published var currentIndex: Int = 0
     @Published var currentImage: NSImage?
     @Published var nextImage: NSImage?
+    @Published var currentVideoPlayer: AVPlayer?
+    @Published var nextVideoPlayer: AVPlayer?
+    @Published var currentKind: MediaItem.Kind = .photo
+    @Published var nextKind: MediaItem.Kind = .photo
+    @Published var currentHoldDuration: Double = 5.0
 
     /// Vision face boxes (normalized rects, origin bottom-left).
     @Published var currentFaceBoxes: [CGRect] = []
@@ -141,29 +151,46 @@ class SlideshowPlayerState: ObservableObject {
     private var slideTimer: Timer?
     private var animationTimer: Timer?
     private var isRunning = false
+    private var didStartNextVideoThisCycle: Bool = false
+    private var currentVideoEndObserver: NSObjectProtocol?
+    private var nextVideoEndObserver: NSObjectProtocol?
     
-    /// Total duration for one complete slide cycle
+    /// Total duration for one complete slide cycle (for current item)
     var totalSlideDuration: Double {
         switch transitionStyle {
         case .plain:
-            return slideDuration
+            return currentHoldDuration
         case .crossFade, .panAndZoom:
-            return SlideshowPlayerState.transitionDuration + slideDuration
+            return SlideshowPlayerState.transitionDuration + currentHoldDuration
         }
     }
     
-    init(photos: [PhotoItem], slideDuration: Double, transitionStyle: SlideshowDocument.Settings.TransitionStyle) {
+    init(
+        photos: [MediaItem],
+        slideDuration: Double,
+        transitionStyle: SlideshowDocument.Settings.TransitionStyle,
+        playVideosWithSound: Bool,
+        playVideosInFull: Bool
+    ) {
         self.photos = photos
         self.slideDuration = slideDuration
         self.transitionStyle = transitionStyle
+        self.playVideosWithSound = playVideosWithSound
+        self.playVideosInFull = playVideosInFull
     }
     
     func start() {
         guard !photos.isEmpty, !isStopped else { return }
         isRunning = true
         currentIndex = 0
-        loadCurrentSlide()
-        startTimers()
+        animationProgress = 0
+        isTransitioning = false
+        didStartNextVideoThisCycle = false
+
+        Task { @MainActor in
+            await prepareCurrentAndNext()
+            startTimers()
+        }
     }
     
     func stop() {
@@ -180,12 +207,21 @@ class SlideshowPlayerState: ObservableObject {
         // Clear images to release GPU resources
         currentImage = nil
         nextImage = nil
+        currentVideoPlayer?.pause()
+        nextVideoPlayer?.pause()
+        currentVideoPlayer = nil
+        nextVideoPlayer = nil
+        currentKind = .photo
+        nextKind = .photo
+        currentHoldDuration = slideDuration
         currentFaceBoxes = []
         nextFaceBoxes = []
         currentEndOffset = .zero
         nextEndOffset = .zero
         currentStartOffset = .zero
         nextStartOffset = .zero
+        didStartNextVideoThisCycle = false
+        removeVideoObservers()
         
         // Clear the image loader cache (fire and forget - no await needed)
         Task.detached { [imageLoader] in
@@ -197,79 +233,115 @@ class SlideshowPlayerState: ObservableObject {
         guard isRunning, !isStopped else { return }
         currentIndex = (currentIndex + 1) % photos.count
         animationProgress = 0
-        isTransitioning = transitionStyle != .plain
-        loadCurrentSlide()
-        restartTimers()
+        isTransitioning = false
+        didStartNextVideoThisCycle = false
+        pauseAndResetVideos()
+        Task { @MainActor in
+            await prepareCurrentAndNext()
+            restartTimers()
+        }
     }
     
     func previousSlide() {
         guard isRunning, !isStopped else { return }
         currentIndex = (currentIndex - 1 + photos.count) % photos.count
         animationProgress = 0
-        isTransitioning = transitionStyle != .plain
-        loadCurrentSlide()
-        restartTimers()
+        isTransitioning = false
+        didStartNextVideoThisCycle = false
+        pauseAndResetVideos()
+        Task { @MainActor in
+            await prepareCurrentAndNext()
+            restartTimers()
+        }
     }
     
-    private func loadCurrentSlide() {
-        guard !isStopped else { return }
-        
-        let currentURL = photos[currentIndex].url
+    private func prepareCurrentAndNext() async {
+        guard !isStopped, !photos.isEmpty else { return }
+
+        let currentItem = photos[currentIndex]
         let nextIndex = (currentIndex + 1) % photos.count
-        let nextURL = photos[nextIndex].url
-        
-        Task { [weak self] in
-            guard let self = self, !self.isStopped else { return }
-            
-            // Load current image
-            if let image = await imageLoader.setCurrent(currentURL, preloadNext: nextURL) {
-                guard !self.isStopped else { return }
-                self.currentImage = image
+        let nextItem = photos[nextIndex]
+
+        currentKind = currentItem.kind
+        nextKind = nextItem.kind
+
+        // Compute current hold duration (videos may use intrinsic duration).
+        currentHoldDuration = await holdDuration(for: currentItem)
+
+        // Start offsets always random per pass (videos participate in transforms too).
+        currentStartOffset = Self.randomStartOffset()
+        nextStartOffset = Self.randomStartOffset()
+
+        // Reset face/camera targets by default.
+        currentFaceBoxes = []
+        nextFaceBoxes = []
+        currentEndOffset = .zero
+        nextEndOffset = .zero
+
+        // Load current
+        switch currentItem.kind {
+        case .photo:
+            currentVideoPlayer?.pause()
+            currentVideoPlayer = nil
+            let preloadURL = (nextItem.kind == .photo) ? nextItem.url : nil
+            if let image = await imageLoader.setCurrent(currentItem.url, preloadNext: preloadURL) {
+                guard !isStopped else { return }
+                currentImage = image
+            } else {
+                currentImage = nil
             }
-            
-            // Load next image for transitions
-            guard !self.isStopped else { return }
-            if let image = await imageLoader.loadImage(for: nextURL) {
-                guard !self.isStopped else { return }
-                self.nextImage = image
-            }
 
-            // Pull cached face data (no detection here) and choose a target per-load.
-            guard !self.isStopped else { return }
-            let currentFaces = await FaceDetectionCache.shared.cachedFaces(for: currentURL) ?? []
-            let nextFaces = await FaceDetectionCache.shared.cachedFaces(for: nextURL) ?? []
-            guard !self.isStopped else { return }
+            let faces = await FaceDetectionCache.shared.cachedFaces(for: currentItem.url) ?? []
+            currentFaceBoxes = faces
+            currentEndOffset = Self.faceTargetOffset(from: faces)
+        case .video:
+            currentImage = nil
+            currentVideoPlayer = makePlayer(url: currentItem.url, shouldAutoPlay: true)
+            installVideoEndObserver(for: currentVideoPlayer, slot: .current)
+        }
 
-            self.currentFaceBoxes = currentFaces
-            self.nextFaceBoxes = nextFaces
-            self.currentEndOffset = Self.faceTargetOffset(from: currentFaces)
-            self.nextEndOffset = Self.faceTargetOffset(from: nextFaces)
+        // Load next
+        switch nextItem.kind {
+        case .photo:
+            nextVideoPlayer?.pause()
+            nextVideoPlayer = nil
+            nextImage = await imageLoader.loadImage(for: nextItem.url)
 
-            // Randomize start offsets per load (so the same photo can start differently each loop pass)
-            self.currentStartOffset = Self.randomStartOffset()
-            self.nextStartOffset = Self.randomStartOffset()
+            let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem.url) ?? []
+            nextFaceBoxes = faces
+            nextEndOffset = Self.faceTargetOffset(from: faces)
+        case .video:
+            nextImage = nil
+            nextVideoPlayer = makePlayer(url: nextItem.url, shouldAutoPlay: false)
+            installVideoEndObserver(for: nextVideoPlayer, slot: .next)
         }
     }
     
     private func startTimers() {
         guard !isStopped else { return }
         
-        // Main slide timer - fires when it's time to advance
-        slideTimer = Timer.scheduledTimer(withTimeInterval: totalSlideDuration, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self = self, !self.isStopped else { return }
-                self.advanceSlide()
-            }
-        }
+        scheduleNextAdvance()
         
         // Animation timer for smooth progress updates (60fps)
         let frameInterval = 1.0 / 60.0
-        animationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self = self, !self.isStopped else { return }
-                self.updateAnimationProgress(deltaTime: frameInterval)
-            }
-        }
+        animationTimer = Timer.scheduledTimer(
+            timeInterval: frameInterval,
+            target: self,
+            selector: #selector(handleAnimationTimer(_:)),
+            userInfo: nil,
+            repeats: true
+        )
+    }
+
+    private func scheduleNextAdvance() {
+        slideTimer?.invalidate()
+        slideTimer = Timer.scheduledTimer(
+            timeInterval: totalSlideDuration,
+            target: self,
+            selector: #selector(handleAdvanceTimer(_:)),
+            userInfo: nil,
+            repeats: false
+        )
     }
     
     private func restartTimers() {
@@ -278,38 +350,144 @@ class SlideshowPlayerState: ObservableObject {
         startTimers()
     }
     
-    private func advanceSlide() {
+    private func advanceSlide() async {
         guard isRunning, !isStopped else { return }
         
+        // Stop any outgoing current video immediately (audio should not linger).
+        if currentKind == .video, let outgoing = currentVideoPlayer, outgoing !== nextVideoPlayer {
+            outgoing.pause()
+        }
+
         // Move to next slide
         currentIndex = (currentIndex + 1) % photos.count
         animationProgress = 0
-        isTransitioning = transitionStyle != .plain
-        
-        // Swap images: next becomes current
+        isTransitioning = false
+        didStartNextVideoThisCycle = false
+
+        // Promote "next" into "current" (preserve playback during overlap).
+        currentKind = nextKind
         currentImage = nextImage
+        currentVideoPlayer = nextVideoPlayer
         currentFaceBoxes = nextFaceBoxes
         currentEndOffset = nextEndOffset
         currentStartOffset = nextStartOffset
-        
-        // Load the new next image
-        let nextIndex = (currentIndex + 1) % photos.count
-        let nextURL = photos[nextIndex].url
-        
-        Task { [weak self] in
-            guard let self = self, !self.isStopped else { return }
-            if let image = await imageLoader.loadImage(for: nextURL) {
-                guard !self.isStopped else { return }
-                self.nextImage = image
-            }
 
-            // Cached face data + random face selection for the new "next"
-            guard !self.isStopped else { return }
-            let faces = await FaceDetectionCache.shared.cachedFaces(for: nextURL) ?? []
-            guard !self.isStopped else { return }
-            self.nextFaceBoxes = faces
-            self.nextEndOffset = Self.faceTargetOffset(from: faces)
-            self.nextStartOffset = Self.randomStartOffset()
+        // Promote end observer token if needed
+        if let t = currentVideoEndObserver { NotificationCenter.default.removeObserver(t) }
+        currentVideoEndObserver = nextVideoEndObserver
+        nextVideoEndObserver = nil
+
+        // Clear next slots before loading new next
+        nextImage = nil
+        nextVideoPlayer = nil
+        nextFaceBoxes = []
+        nextEndOffset = .zero
+        nextStartOffset = .zero
+        nextKind = .photo
+
+        // Compute hold duration for new current
+        let currentItem = photos[currentIndex]
+        currentHoldDuration = await holdDuration(for: currentItem)
+
+        // Load new next
+        let newNextIndex = (currentIndex + 1) % photos.count
+        let nextItem = photos[newNextIndex]
+        nextKind = nextItem.kind
+        nextStartOffset = Self.randomStartOffset()
+
+        switch nextItem.kind {
+        case .photo:
+            nextVideoPlayer?.pause()
+            nextVideoPlayer = nil
+            nextImage = await imageLoader.loadImage(for: nextItem.url)
+
+            let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem.url) ?? []
+            nextFaceBoxes = faces
+            nextEndOffset = Self.faceTargetOffset(from: faces)
+        case .video:
+            nextImage = nil
+            nextFaceBoxes = []
+            nextEndOffset = .zero
+            nextVideoPlayer = makePlayer(url: nextItem.url, shouldAutoPlay: false)
+            installVideoEndObserver(for: nextVideoPlayer, slot: .next)
+        }
+
+        scheduleNextAdvance()
+    }
+
+    private func holdDuration(for item: MediaItem) async -> Double {
+        switch item.kind {
+        case .photo:
+            return slideDuration
+        case .video:
+            if playVideosInFull, let seconds = await VideoMetadataCache.shared.durationSeconds(for: item.url) {
+                return seconds
+            }
+            return slideDuration
+        }
+    }
+
+    private func makePlayer(url: URL, shouldAutoPlay: Bool) -> AVPlayer {
+        let item = AVPlayerItem(url: url)
+        let p = AVPlayer(playerItem: item)
+        p.isMuted = !playVideosWithSound
+        if shouldAutoPlay {
+            p.play()
+        } else {
+            p.pause()
+            p.seek(to: .zero)
+        }
+        return p
+    }
+
+    private enum VideoSlot { case current, next }
+
+    private func installVideoEndObserver(for player: AVPlayer?, slot: VideoSlot) {
+        guard let player, let item = player.currentItem else { return }
+
+        let token = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { _ in
+            // Freeze on last frame while fade continues.
+            player.pause()
+            item.seek(to: item.duration, toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: nil)
+        }
+
+        switch slot {
+        case .current:
+            if let t = currentVideoEndObserver { NotificationCenter.default.removeObserver(t) }
+            currentVideoEndObserver = token
+        case .next:
+            if let t = nextVideoEndObserver { NotificationCenter.default.removeObserver(t) }
+            nextVideoEndObserver = token
+        }
+    }
+
+    private func removeVideoObservers() {
+        if let t = currentVideoEndObserver { NotificationCenter.default.removeObserver(t) }
+        if let t = nextVideoEndObserver { NotificationCenter.default.removeObserver(t) }
+        currentVideoEndObserver = nil
+        nextVideoEndObserver = nil
+    }
+
+    private func pauseAndResetVideos() {
+        currentVideoPlayer?.pause()
+        nextVideoPlayer?.pause()
+        removeVideoObservers()
+    }
+
+    @objc private func handleAnimationTimer(_ timer: Timer) {
+        guard !isStopped else { return }
+        let frameInterval = 1.0 / 60.0
+        updateAnimationProgress(deltaTime: frameInterval)
+    }
+
+    @objc private func handleAdvanceTimer(_ timer: Timer) {
+        guard !isStopped else { return }
+        Task { @MainActor in
+            await self.advanceSlide()
         }
     }
 
@@ -368,8 +546,16 @@ class SlideshowPlayerState: ObservableObject {
         
         // Update transition state
         if transitionStyle != .plain {
-            let transitionStartProgress = slideDuration / totalSlideDuration
-            isTransitioning = animationProgress >= transitionStartProgress && animationProgress < 1.0
+            let transitionStartProgress = currentHoldDuration / totalSlideDuration
+            let willTransition = animationProgress >= transitionStartProgress && animationProgress < 1.0
+            if willTransition, !isTransitioning {
+                // Transition is starting: begin next video playback now (true overlap).
+                if nextKind == .video, !didStartNextVideoThisCycle {
+                    nextVideoPlayer?.play()
+                    didStartNextVideoThisCycle = true
+                }
+            }
+            isTransitioning = willTransition
         }
     }
 }
@@ -385,11 +571,22 @@ struct PlainTransitionView: View {
     @ObservedObject var playerState: SlideshowPlayerState
     
     var body: some View {
-        if !playerState.isStopped, let image = playerState.currentImage {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if !playerState.isStopped {
+            switch playerState.currentKind {
+            case .photo:
+                if let image = playerState.currentImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            case .video:
+                if let player = playerState.currentVideoPlayer {
+                    PlayerLayerView(player: player, videoGravity: .resizeAspect)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
+                }
+            }
         }
     }
 }
@@ -399,7 +596,7 @@ struct CrossFadeTransitionView: View {
     @ObservedObject var playerState: SlideshowPlayerState
     
     private var transitionStartProgress: Double {
-        playerState.slideDuration / playerState.totalSlideDuration
+        playerState.currentHoldDuration / playerState.totalSlideDuration
     }
     
     /// Progress through the transition (0-1 during transition window)
@@ -415,21 +612,43 @@ struct CrossFadeTransitionView: View {
         if !playerState.isStopped {
             ZStack {
                 // Hold phase: just show current.
-                if let image = playerState.currentImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .opacity(playerState.isTransitioning ? (1.0 - transitionProgress) : 1.0)
+                Group {
+                    switch playerState.currentKind {
+                    case .photo:
+                        if let image = playerState.currentImage {
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                        }
+                    case .video:
+                        if let player = playerState.currentVideoPlayer {
+                            PlayerLayerView(player: player, videoGravity: .resizeAspect)
+                                .allowsHitTesting(false)
+                        }
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(playerState.isTransitioning ? (1.0 - transitionProgress) : 1.0)
                 
                 // Transition phase: fade next in while current fades out.
-                if playerState.isTransitioning, let image = playerState.nextImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .opacity(transitionProgress)
+                if playerState.isTransitioning {
+                    Group {
+                        switch playerState.nextKind {
+                        case .photo:
+                            if let image = playerState.nextImage {
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                            }
+                        case .video:
+                            if let player = playerState.nextVideoPlayer {
+                                PlayerLayerView(player: player, videoGravity: .resizeAspect)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(transitionProgress)
                 }
             }
         }
@@ -446,7 +665,7 @@ struct PanAndZoomTransitionView: View {
     private let endScale: Double = 1.4
     
     private var transitionStartProgress: Double {
-        playerState.slideDuration / playerState.totalSlideDuration
+        playerState.currentHoldDuration / playerState.totalSlideDuration
     }
     
     /// Progress through the transition window (0-1)
@@ -465,7 +684,7 @@ struct PanAndZoomTransitionView: View {
     
     /// Total motion time for one photo (fade-in + hold + fade-out)
     private var motionTotalDuration: Double {
-        playerState.slideDuration + (2.0 * SlideshowPlayerState.transitionDuration)
+        playerState.currentHoldDuration + (2.0 * SlideshowPlayerState.transitionDuration)
     }
     
     /// Current photo has already been moving since its fade-in began in the previous transition.
@@ -475,44 +694,82 @@ struct PanAndZoomTransitionView: View {
     
     /// Next photo begins moving right at transition start.
     private var nextMotionElapsed: Double {
-        max(0.0, cycleElapsed - playerState.slideDuration)
+        max(0.0, cycleElapsed - playerState.currentHoldDuration)
     }
     
     var body: some View {
         if !playerState.isStopped {
             ZStack {
                 // Current image: always moving; fades out during transition.
-                if let image = playerState.currentImage {
-                    KenBurnsImageView(
-                        image: image,
-                        startOffset: playerState.currentStartOffset,
-                        endOffset: playerState.currentEndOffset,
-                        useFaceTarget: zoomOnFaces,
-                        faceBoxes: playerState.currentFaceBoxes,
-                        debugShowFaces: debugShowFaces,
-                        startScale: startScale,
-                        endScale: endScale,
-                        motionElapsed: currentMotionElapsed,
-                        motionTotal: motionTotalDuration,
-                        opacity: playerState.isTransitioning ? (1.0 - transitionProgress) : 1.0
-                    )
+                Group {
+                    switch playerState.currentKind {
+                    case .photo:
+                        if let image = playerState.currentImage {
+                            KenBurnsImageView(
+                                image: image,
+                                startOffset: playerState.currentStartOffset,
+                                endOffset: playerState.currentEndOffset,
+                                useFaceTarget: zoomOnFaces,
+                                faceBoxes: playerState.currentFaceBoxes,
+                                debugShowFaces: debugShowFaces,
+                                startScale: startScale,
+                                endScale: endScale,
+                                motionElapsed: currentMotionElapsed,
+                                motionTotal: motionTotalDuration,
+                                opacity: playerState.isTransitioning ? (1.0 - transitionProgress) : 1.0
+                            )
+                        }
+                    case .video:
+                        if let player = playerState.currentVideoPlayer {
+                            KenBurnsVideoView(
+                                player: player,
+                                startOffset: playerState.currentStartOffset,
+                                endOffset: .zero,
+                                startScale: startScale,
+                                endScale: endScale,
+                                motionElapsed: currentMotionElapsed,
+                                motionTotal: motionTotalDuration,
+                                opacity: playerState.isTransitioning ? (1.0 - transitionProgress) : 1.0
+                            )
+                        }
+                    }
                 }
                 
                 // Next image: only during transition; starts moving immediately.
-                if playerState.isTransitioning, let image = playerState.nextImage {
-                    KenBurnsImageView(
-                        image: image,
-                        startOffset: playerState.nextStartOffset,
-                        endOffset: playerState.nextEndOffset,
-                        useFaceTarget: zoomOnFaces,
-                        faceBoxes: playerState.nextFaceBoxes,
-                        debugShowFaces: debugShowFaces,
-                        startScale: startScale,
-                        endScale: endScale,
-                        motionElapsed: nextMotionElapsed,
-                        motionTotal: motionTotalDuration,
-                        opacity: transitionProgress
-                    )
+                if playerState.isTransitioning {
+                    Group {
+                        switch playerState.nextKind {
+                        case .photo:
+                            if let image = playerState.nextImage {
+                                KenBurnsImageView(
+                                    image: image,
+                                    startOffset: playerState.nextStartOffset,
+                                    endOffset: playerState.nextEndOffset,
+                                    useFaceTarget: zoomOnFaces,
+                                    faceBoxes: playerState.nextFaceBoxes,
+                                    debugShowFaces: debugShowFaces,
+                                    startScale: startScale,
+                                    endScale: endScale,
+                                    motionElapsed: nextMotionElapsed,
+                                    motionTotal: motionTotalDuration,
+                                    opacity: transitionProgress
+                                )
+                            }
+                        case .video:
+                            if let player = playerState.nextVideoPlayer {
+                                KenBurnsVideoView(
+                                    player: player,
+                                    startOffset: playerState.nextStartOffset,
+                                    endOffset: .zero,
+                                    startScale: startScale,
+                                    endScale: endScale,
+                                    motionElapsed: nextMotionElapsed,
+                                    motionTotal: motionTotalDuration,
+                                    opacity: transitionProgress
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -568,6 +825,45 @@ private struct KenBurnsImageView: View {
             }
                 .scaleEffect(scale)
                 // Offsets are normalized relative to the visible frame.
+                .offset(x: offset.width * geo.size.width, y: offset.height * geo.size.height)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .opacity(opacity)
+        }
+    }
+}
+
+private struct KenBurnsVideoView: View {
+    let player: AVPlayer
+    let startOffset: CGSize
+    let endOffset: CGSize
+    let startScale: Double
+    let endScale: Double
+    let motionElapsed: Double
+    let motionTotal: Double
+    let opacity: Double
+
+    private var progress: Double {
+        guard motionTotal > 0 else { return 1.0 }
+        return min(1.0, max(0.0, motionElapsed / motionTotal))
+    }
+
+    private var scale: CGFloat {
+        CGFloat(startScale + ((endScale - startScale) * progress))
+    }
+
+    private var offset: CGSize {
+        CGSize(
+            width: (startOffset.width * (1.0 - progress)) + (endOffset.width * progress),
+            height: (startOffset.height * (1.0 - progress)) + (endOffset.height * progress)
+        )
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            PlayerLayerView(player: player, videoGravity: .resizeAspect)
+                .allowsHitTesting(false)
+                .scaleEffect(scale)
                 .offset(x: offset.width * geo.size.width, y: offset.height * geo.size.height)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()

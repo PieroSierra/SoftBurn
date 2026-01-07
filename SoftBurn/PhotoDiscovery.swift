@@ -7,14 +7,14 @@
 
 import Foundation
 
-/// Handles discovery of photos in folders
+/// Handles discovery of media items (photos + videos) in folders
 enum PhotoDiscovery {
-    /// Recursively discover photos in a folder (runs synchronously, call from background if needed)
-    private static func discoverPhotosSync(in url: URL) -> [PhotoItem] {
-        var photos: [PhotoItem] = []
+    /// Recursively discover media in a folder (runs synchronously, call from background if needed)
+    private static func discoverMediaSync(in url: URL) -> [MediaItem] {
+        var items: [MediaItem] = []
         
         guard url.startAccessingSecurityScopedResource() else {
-            return photos
+            return items
         }
         defer { url.stopAccessingSecurityScopedResource() }
         
@@ -23,7 +23,7 @@ enum PhotoDiscovery {
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else {
-            return photos
+            return items
         }
         
         while let fileURL = enumerator.nextObject() as? URL {
@@ -33,18 +33,24 @@ enum PhotoDiscovery {
                 continue
             }
             
-            // Check if it's an image file
-            if PhotoItem.isImageFile(fileURL) {
-                photos.append(PhotoItem(url: fileURL))
+            // Image
+            if MediaItem.isImageFile(fileURL) {
+                items.append(MediaItem(url: fileURL, kind: .photo))
+                continue
+            }
+            
+            // Video
+            if MediaItem.isVideoFile(fileURL) {
+                items.append(MediaItem(url: fileURL, kind: .video))
             }
         }
         
-        return photos
+        return items
     }
     
-    /// Discover photos from multiple URLs synchronously
-    private static func discoverPhotosSync(from urls: [URL]) -> [PhotoItem] {
-        var allPhotos: [PhotoItem] = []
+    /// Discover media from multiple URLs synchronously
+    private static func discoverMediaSync(from urls: [URL]) -> [MediaItem] {
+        var allItems: [MediaItem] = []
         
         for url in urls {
             var isDirectory: ObjCBool = false
@@ -53,30 +59,30 @@ enum PhotoDiscovery {
             }
             
             if isDirectory.boolValue {
-                let photos = discoverPhotosSync(in: url)
-                allPhotos.append(contentsOf: photos)
+                let items = discoverMediaSync(in: url)
+                allItems.append(contentsOf: items)
             } else {
                 // Single file
-                if PhotoItem.isImageFile(url) {
-                    allPhotos.append(PhotoItem(url: url))
+                if MediaItem.isImageFile(url) {
+                    allItems.append(MediaItem(url: url, kind: .photo))
+                } else if MediaItem.isVideoFile(url) {
+                    allItems.append(MediaItem(url: url, kind: .video))
                 }
             }
         }
         
-        return allPhotos
+        return allItems
     }
     
-    /// Recursively discover photos in a folder (async wrapper)
-    static func discoverPhotos(in url: URL) async -> [PhotoItem] {
-        // Run synchronous work on background thread, return result to caller
-        let result = discoverPhotosSync(in: url)
+    /// Recursively discover media in a folder (async wrapper)
+    static func discoverPhotos(in url: URL) async -> [MediaItem] {
+        let result = discoverMediaSync(in: url)
         return result
     }
     
-    /// Discover photos from multiple URLs (files or folders)
-    static func discoverPhotos(from urls: [URL]) async -> [PhotoItem] {
-        // Run synchronous work on background thread, return result to caller
-        let result = discoverPhotosSync(from: urls)
+    /// Discover media from multiple URLs (files or folders)
+    static func discoverPhotos(from urls: [URL]) async -> [MediaItem] {
+        let result = discoverMediaSync(from: urls)
         return result
     }
 }
