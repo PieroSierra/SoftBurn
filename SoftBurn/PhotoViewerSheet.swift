@@ -30,7 +30,7 @@ struct PhotoViewerSheet: View {
         GeometryReader { geo in
             ZStack {
                 // Dimmed background over the app
-                Color.black.opacity(0.55)
+                Color.black.opacity(0.25)
                     .ignoresSafeArea()
                     .onTapGesture { onDismiss() }
 

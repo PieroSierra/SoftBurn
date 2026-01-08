@@ -86,8 +86,24 @@ struct SlideshowDocument: Codable {
         
         enum TransitionStyle: String, Codable, CaseIterable {
             case panAndZoom = "Pan & Zoom"
+            case zoom = "Zoom"
             case crossFade = "Cross Fade"
             case plain = "Plain"
+
+            /// UI ordering requirement: Pan & Zoom, Zoom, Cross-fade, Plain
+            static var allCases: [TransitionStyle] {
+                [.panAndZoom, .zoom, .crossFade, .plain]
+            }
+
+            /// Display name (keeps persisted raw values stable for backwards compatibility).
+            var displayName: String {
+                switch self {
+                case .panAndZoom: return "Pan & Zoom"
+                case .zoom: return "Zoom"
+                case .crossFade: return "Cross-fade"
+                case .plain: return "Plain"
+                }
+            }
         }
     }
 

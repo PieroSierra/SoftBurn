@@ -231,6 +231,32 @@ struct ContentView: View {
         .onDeleteCommand {
             slideshowState.removeSelectedPhotos()
         }
+        // Keep the "preview anchor" in sync with keyboard-driven selection changes.
+        .onChange(of: slideshowState.selectedPhotoIDs) { _, newSelection in
+            if newSelection.isEmpty {
+                lastSelectedIndex = nil
+                return
+            }
+
+            // If there's exactly one selected item, always anchor to it.
+            if newSelection.count == 1, let id = newSelection.first,
+               let idx = slideshowState.photos.firstIndex(where: { $0.id == id }) {
+                lastSelectedIndex = idx
+                return
+            }
+
+            // If we have an anchor and it's still selected, keep it.
+            if let idx = lastSelectedIndex,
+               idx >= 0, idx < slideshowState.photos.count,
+               newSelection.contains(slideshowState.photos[idx].id) {
+                return
+            }
+
+            // Otherwise, pick the first selected item in slideshow order.
+            if let firstIdx = slideshowState.photos.firstIndex(where: { newSelection.contains($0.id) }) {
+                lastSelectedIndex = firstIdx
+            }
+        }
     }
     
     // MARK: - Slideshow Window
@@ -270,17 +296,10 @@ struct ContentView: View {
                 }) {
                     Image(systemName: "plus")
                         .frame(width: 20, height: 20)
+                    Text("Add Media")
                 }
-                .help("Add photos")
+                .help("Add media")
                 
-                Button(action: {
-                    beginSave()
-                }) {
-                    Image(systemName: "square.and.arrow.down")
-                        .frame(width: 20, height: 20)
-                }
-                .help("Save slideshow")
-                .disabled(slideshowState.isEmpty)
                 
                 Button(action: {
                     importMode = .slideshow
@@ -288,8 +307,20 @@ struct ContentView: View {
                 }) {
                     Image(systemName: "folder")
                         .frame(width: 20, height: 20)
+                    Text("Open")
                 }
                 .help("Open slideshow")
+
+                Button(action: {
+                    beginSave()
+                }) {
+                    Image(systemName: "square.and.arrow.down")
+                        .frame(width: 20, height: 20)
+                    Text("Save")
+                }
+                .help("Save")
+                .disabled(slideshowState.isEmpty)
+
             }
             
             Spacer()
@@ -310,6 +341,7 @@ struct ContentView: View {
                 }) {
                     Image(systemName: "trash")
                         .frame(width: 20, height: 20)
+                    //Text("Remove photo")
                 }
                 .help("Remove from slideshow")
                 .disabled(!slideshowState.hasSelection)
@@ -319,6 +351,7 @@ struct ContentView: View {
                 }) {
                     Image(systemName: "gearshape")
                         .frame(width: 20, height: 20)
+                   // Text("Settings")
                 }
                 .help("Slideshow settings")
                 .popover(isPresented: $showSettings, arrowEdge: .bottom) {
@@ -331,6 +364,7 @@ struct ContentView: View {
                     Image(systemName: "play.fill")
                         .frame(width: 20, height: 20)
                         .foregroundStyle(slideshowState.isEmpty ? Color.secondary : Color.blue)
+                    Text("Play")
                 }
                 .help("Play slideshow")
                 .disabled(slideshowState.isEmpty)

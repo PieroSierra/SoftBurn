@@ -55,7 +55,7 @@ struct SlideshowPlayerView: View {
                     PlainTransitionView(playerState: playerState)
                 case .crossFade:
                     CrossFadeTransitionView(playerState: playerState)
-                case .panAndZoom:
+                case .panAndZoom, .zoom:
                     PanAndZoomTransitionView(
                         playerState: playerState,
                         zoomOnFaces: settings.zoomOnFaces,
@@ -160,7 +160,7 @@ class SlideshowPlayerState: ObservableObject {
         switch transitionStyle {
         case .plain:
             return currentHoldDuration
-        case .crossFade, .panAndZoom:
+        case .crossFade, .panAndZoom, .zoom:
             return SlideshowPlayerState.transitionDuration + currentHoldDuration
         }
     }
@@ -268,9 +268,11 @@ class SlideshowPlayerState: ObservableObject {
         // Compute current hold duration (videos may use intrinsic duration).
         currentHoldDuration = await holdDuration(for: currentItem)
 
-        // Start offsets always random per pass (videos participate in transforms too).
-        currentStartOffset = Self.randomStartOffset()
-        nextStartOffset = Self.randomStartOffset()
+        // Start offsets depend on the transition style:
+        // - Pan & Zoom: random start, then move toward face/center
+        // - Zoom: start centered (0,0), then move toward face/center
+        currentStartOffset = Self.startOffset(for: transitionStyle)
+        nextStartOffset = Self.startOffset(for: transitionStyle)
 
         // Reset face/camera targets by default.
         currentFaceBoxes = []
@@ -393,7 +395,7 @@ class SlideshowPlayerState: ObservableObject {
         let newNextIndex = (currentIndex + 1) % photos.count
         let nextItem = photos[newNextIndex]
         nextKind = nextItem.kind
-        nextStartOffset = Self.randomStartOffset()
+        nextStartOffset = Self.startOffset(for: transitionStyle)
 
         switch nextItem.kind {
         case .photo:
@@ -536,6 +538,18 @@ class SlideshowPlayerState: ObservableObject {
         }
 
         return CGSize(width: x, height: y)
+    }
+
+    private static func startOffset(for style: SlideshowDocument.Settings.TransitionStyle) -> CGSize {
+        switch style {
+        case .panAndZoom:
+            return randomStartOffset()
+        case .zoom:
+            return .zero
+        case .crossFade, .plain:
+            // Not used by those transitions, but keep deterministic.
+            return .zero
+        }
     }
     
     private func updateAnimationProgress(deltaTime: Double) {

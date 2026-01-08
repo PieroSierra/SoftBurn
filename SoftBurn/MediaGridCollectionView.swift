@@ -294,7 +294,7 @@ struct MediaGridCollectionView: NSViewRepresentable {
         }
 
         private func showDropPlaceholder(at insertionIndex: Int, animated: Bool) {
-            guard let collectionView else { return }
+            guard collectionView != nil else { return }
             let clamped = max(0, min(insertionIndex, currentPhotos.count))
             if placeholderInsertionIndex == clamped { return }
             placeholderInsertionIndex = clamped

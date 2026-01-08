@@ -20,7 +20,7 @@ struct SettingsPopoverView: View {
             settingsRow(label: "Transition") {
                 Picker("", selection: $settings.transitionStyle) {
                     ForEach(SlideshowDocument.Settings.TransitionStyle.allCases, id: \.self) { style in
-                        Text(style.rawValue).tag(style)
+                        Text(style.displayName).tag(style)
                     }
                 }
                 .labelsHidden()
@@ -31,7 +31,7 @@ struct SettingsPopoverView: View {
             settingsRow(label: "") {
                 Toggle("Zoom on faces", isOn: $settings.zoomOnFaces)
                     .toggleStyle(.checkbox)
-                    .disabled(settings.transitionStyle != .panAndZoom)
+                    .disabled(!(settings.transitionStyle == .panAndZoom || settings.transitionStyle == .zoom))
             }
             
             Divider()
@@ -134,8 +134,8 @@ struct BackgroundColorPickerView: View {
     @Binding var selectedColor: Color
     
     private let presetColors: [(String, Color)] = [
+        ("Dark Gray", Color(white: 0.15)),
         ("Black", .black),
-        ("Dark Gray", Color(white: 0.2)),
         ("Gray", .gray),
         ("White", .white),
         ("Navy", Color(red: 0.1, green: 0.1, blue: 0.3)),

@@ -18,7 +18,7 @@ struct EmptyStateView: View {
                 .font(.system(size: 64))
                 .foregroundColor(.secondary)
             
-            Text("Add Photos to Get Started")
+            Text("Add Photos or Videos to Get Started")
                 .font(.title2)
                 .foregroundColor(.primary)
             
