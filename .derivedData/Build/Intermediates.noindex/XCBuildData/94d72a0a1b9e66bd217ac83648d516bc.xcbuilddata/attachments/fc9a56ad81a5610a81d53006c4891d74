@@ -1,0 +1,279 @@
+{
+  "" : {
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurn-primary.dia",
+    "emit-module-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurn-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurn-primary-emit-module.dia",
+    "pch" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurn-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurn-primary.swiftdeps"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/AppSessionState.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/AppSessionState.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/AppSessionState.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/AppSessionState.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/AppSessionState.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/AppSessionState.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/AppSessionState.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/AppSessionState.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/AppSessionState~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/ContentView.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ContentView.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ContentView.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ContentView.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ContentView.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ContentView.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ContentView~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/EmptyStateView.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/EmptyStateView.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/EmptyStateView.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/EmptyStateView.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/EmptyStateView.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/EmptyStateView.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/EmptyStateView.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/EmptyStateView.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/EmptyStateView~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/FaceDetectionCache.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/MainWindowDelegate.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/MediaGridCollectionView.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/Models.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/PhotoDiscovery.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/PhotoGridView.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/PhotoViewerSheet.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoViewerSheet.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoViewerSheet.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoViewerSheet.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoViewerSheet.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoViewerSheet.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoViewerSheet.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoViewerSheet.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoViewerSheet~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/PlaybackImageLoader.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlaybackImageLoader.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlaybackImageLoader.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlaybackImageLoader.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlaybackImageLoader.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlaybackImageLoader.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlaybackImageLoader.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlaybackImageLoader.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlaybackImageLoader~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/PlayerLayerView.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlayerLayerView.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlayerLayerView.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlayerLayerView.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlayerLayerView.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlayerLayerView.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlayerLayerView.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlayerLayerView.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PlayerLayerView~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/ScreenIdleSleepController.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ScreenIdleSleepController.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ScreenIdleSleepController.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ScreenIdleSleepController.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ScreenIdleSleepController.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ScreenIdleSleepController.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ScreenIdleSleepController.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ScreenIdleSleepController.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ScreenIdleSleepController~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/SettingsPopoverView.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SettingsPopoverView.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SettingsPopoverView.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SettingsPopoverView.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SettingsPopoverView.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SettingsPopoverView.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SettingsPopoverView.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SettingsPopoverView.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SettingsPopoverView~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/SlideshowDocument.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowDocument.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowDocument.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowDocument.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowDocument.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowDocument.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowDocument.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowDocument.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowDocument~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/SlideshowPlayerView.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowPlayerView.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowPlayerView.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowPlayerView.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowPlayerView.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowPlayerView.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowPlayerView.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowPlayerView.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowPlayerView~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/SlideshowSettings.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowSettings.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowSettings.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowSettings.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowSettings.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowSettings.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowSettings.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowSettings.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowSettings~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/SlideshowState.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowState.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowState.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowState.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowState.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowState.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowState.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowState.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SlideshowState~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/SoftBurnApp.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnApp.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnApp.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnApp.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnApp.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnApp.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnApp.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnApp.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnApp~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/SoftBurnAppDelegate.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnAppDelegate.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnAppDelegate.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnAppDelegate.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnAppDelegate.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnAppDelegate.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnAppDelegate.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnAppDelegate.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/SoftBurnAppDelegate~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/ThumbnailCache.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailCache.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailCache.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailCache.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailCache.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailCache.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailCache.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailCache.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailCache~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/ThumbnailView.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailView.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailView.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailView.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailView.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailView.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailView.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailView.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ThumbnailView~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/VideoMetadataCache.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/VideoMetadataCache.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/VideoMetadataCache.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/VideoMetadataCache.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/VideoMetadataCache.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/VideoMetadataCache.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/VideoMetadataCache.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/VideoMetadataCache.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/VideoMetadataCache~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/ViewerAVPlayerView.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerAVPlayerView.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerAVPlayerView.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerAVPlayerView.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerAVPlayerView.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerAVPlayerView.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerAVPlayerView.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerAVPlayerView.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerAVPlayerView~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/ViewerImageLoader.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerImageLoader.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerImageLoader.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerImageLoader.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerImageLoader.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerImageLoader.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerImageLoader.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerImageLoader.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/ViewerImageLoader~partial.swiftmodule"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/WindowAccessor.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/WindowAccessor.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/WindowAccessor.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/WindowAccessor.dia",
+    "index-unit-output-path" : "/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/WindowAccessor.o",
+    "llvm-bc" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/WindowAccessor.bc",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/WindowAccessor.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/WindowAccessor.swiftdeps",
+    "swiftmodule" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/WindowAccessor~partial.swiftmodule"
+  }
+}

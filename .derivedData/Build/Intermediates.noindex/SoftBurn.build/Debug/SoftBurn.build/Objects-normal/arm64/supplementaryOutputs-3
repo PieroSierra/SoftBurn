@@ -1,0 +1,23 @@
+{
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/Models.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.dia",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/Models.swiftdeps"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/PhotoDiscovery.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.dia",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoDiscovery.swiftdeps"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/PhotoGridView.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.dia",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/PhotoGridView.swiftdeps"
+  }
+}

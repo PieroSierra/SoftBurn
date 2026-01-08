@@ -292,6 +292,9 @@ struct PhotoViewerSheet: View {
             case 124: // Right arrow
                 showNext()
                 return nil
+            case 125, 126: // Down, Up
+                // Prevent the underlying grid from changing selection while preview is visible.
+                return nil
             case 49: // Space
                 if currentItem?.kind == .video {
                     togglePlayPause()

@@ -1,0 +1,23 @@
+{
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/FaceDetectionCache.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.dia",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/FaceDetectionCache.swiftdeps"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/MainWindowDelegate.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.dia",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MainWindowDelegate.swiftdeps"
+  },
+  "/Users/pierosierra/Development/SoftBurn/SoftBurn/SoftBurn/MediaGridCollectionView.swift" : {
+    "const-values" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.swiftconstvalues",
+    "dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.d",
+    "diagnostics" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.dia",
+    "object" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.o",
+    "swift-dependencies" : "/Users/pierosierra/Development/SoftBurn/SoftBurn/.derivedData/Build/Intermediates.noindex/SoftBurn.build/Debug/SoftBurn.build/Objects-normal/arm64/MediaGridCollectionView.swiftdeps"
+  }
+}

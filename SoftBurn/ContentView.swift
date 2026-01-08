@@ -59,12 +59,17 @@ struct ContentView: View {
                 } else {
                     PhotoGridView(
                         photos: slideshowState.photos,
-                        selectedPhotoIDs: slideshowState.selectedPhotoIDs,
-                        onPhotoTap: { photoID, isCommandKey, isShiftKey in
-                            handlePhotoTap(photoID: photoID, isCommandKey: isCommandKey, isShiftKey: isShiftKey)
+                        selectedPhotoIDs: $slideshowState.selectedPhotoIDs,
+                        onUserClickItem: { photoID in
+                            if let idx = slideshowState.photos.firstIndex(where: { $0.id == photoID }) {
+                                lastSelectedIndex = idx
+                            }
                         },
                         onOpenViewer: { photoID in
                             openViewer(for: photoID)
+                        },
+                        onPreviewSelection: {
+                            openViewerForSelection()
                         },
                         onDrop: { urls in
                             Task {
@@ -377,27 +382,6 @@ struct ContentView: View {
     // MARK: - Selection Handling
     
     @State private var lastSelectedIndex: Int?
-    
-    private func handlePhotoTap(photoID: UUID, isCommandKey: Bool, isShiftKey: Bool) {
-        guard let currentIndex = slideshowState.photos.firstIndex(where: { $0.id == photoID }) else {
-            return
-        }
-        
-        if isShiftKey, let lastIndex = lastSelectedIndex {
-            // Range selection (shift+click)
-            let startID = slideshowState.photos[lastIndex].id
-            slideshowState.selectRange(from: startID, to: photoID)
-        } else if isCommandKey {
-            // Toggle selection (cmd+click for multi-select)
-            slideshowState.toggleSelection(for: photoID)
-        } else {
-            // Single selection (replace current selection)
-            slideshowState.deselectAll()
-            slideshowState.toggleSelection(for: photoID)
-        }
-        
-        lastSelectedIndex = currentIndex
-    }
 
     // MARK: - Viewer
 
