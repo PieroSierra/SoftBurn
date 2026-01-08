@@ -29,8 +29,8 @@ struct MediaGridCollectionView: NSViewRepresentable {
     /// External file drop (folders/images/movies).
     let onDropFiles: ([URL]) -> Void
 
-    /// Local reorder (IDs to move, and target ID used as position anchor).
-    let onReorder: ([UUID], UUID) -> Void
+    /// Local reorder (Photos.app-style insertion gap).
+    let onReorderToIndex: ([UUID], Int) -> Void
 
     /// Called when a drag begins (used to ensure drag item is selected).
     let onDragStart: (UUID) -> Void
@@ -93,6 +93,10 @@ struct MediaGridCollectionView: NSViewRepresentable {
         private var currentlyDraggingIDs: [UUID] = []
         private var lastAppliedIDs: [UUID] = []
 
+        // Drag placeholder (visual gap) support
+        private let dropPlaceholderID = UUID()
+        private var placeholderInsertionIndex: Int?
+
         init(parent: MediaGridCollectionView) {
             self.parent = parent
         }
@@ -112,7 +116,9 @@ struct MediaGridCollectionView: NSViewRepresentable {
                 guard let self else { return nil }
                 let item = cv.makeItem(withIdentifier: MediaCollectionViewItem.reuseIdentifier, for: indexPath)
                 guard let mediaItem = item as? MediaCollectionViewItem else { return item }
-                if let model = self.itemByID[id] {
+                if id == self.dropPlaceholderID {
+                    mediaItem.applyPlaceholder()
+                } else if let model = self.itemByID[id] {
                     mediaItem.apply(model)
                 }
                 return mediaItem
@@ -203,6 +209,7 @@ struct MediaGridCollectionView: NSViewRepresentable {
 
         func collectionView(_ collectionView: NSCollectionView, draggingSession session: NSDraggingSession, endedAt screenPoint: NSPoint, dragOperation operation: NSDragOperation) {
             currentlyDraggingIDs.removeAll()
+            hideDropPlaceholder(animated: true)
         }
 
         // MARK: NSCollectionViewDelegate (drag/drop reorder)
@@ -235,9 +242,19 @@ struct MediaGridCollectionView: NSViewRepresentable {
                 return []
             }
 
-            // Match the current SwiftUI behavior (drop "onto" an item as the reorder anchor),
-            // and avoid generic insertion-gap feedback.
-            proposedDropOperation.pointee = .on
+            // Use insertion drops; we render our own animated gap by inserting a placeholder item.
+            proposedDropOperation.pointee = .before
+
+            // Normalize insertion index to the model (exclude placeholder if it's already present).
+            let proposed = proposedDropIndexPath.pointee
+            var insertionIndex = max(0, min(proposed.item, currentPhotos.count))
+            if let placeholderInsertionIndex,
+               // If the placeholder is already inserted before the proposed position in the snapshot,
+               // NSCollectionView's proposed index will be shifted by +1.
+               proposed.item > placeholderInsertionIndex {
+                insertionIndex = max(0, insertionIndex - 1)
+            }
+            showDropPlaceholder(at: insertionIndex, animated: true)
             return .move
         }
 
@@ -269,20 +286,53 @@ struct MediaGridCollectionView: NSViewRepresentable {
 
             guard !idsToMove.isEmpty else { return false }
 
-            guard indexPath.section == 0,
-                  indexPath.item >= 0,
-                  indexPath.item < currentPhotos.count else {
-                return false
-            }
-            let targetID = currentPhotos[indexPath.item].id
-
-            // Prevent no-op
-            if idsToMove.count == 1, idsToMove.first == targetID {
-                return false
-            }
-
-            parent.onReorder(idsToMove, targetID)
+            // With `.before`, `indexPath.item` is the insertion index (can be == count).
+            let insertionIndex = placeholderInsertionIndex ?? max(0, min(indexPath.item, currentPhotos.count))
+            hideDropPlaceholder(animated: false)
+            parent.onReorderToIndex(idsToMove, insertionIndex)
             return true
+        }
+
+        private func showDropPlaceholder(at insertionIndex: Int, animated: Bool) {
+            guard let collectionView else { return }
+            let clamped = max(0, min(insertionIndex, currentPhotos.count))
+            if placeholderInsertionIndex == clamped { return }
+            placeholderInsertionIndex = clamped
+
+            var ids = currentPhotos.map(\.id)
+            ids.insert(dropPlaceholderID, at: clamped)
+
+            var snapshot = NSDiffableDataSourceSnapshot<Int, UUID>()
+            snapshot.appendSections([0])
+            snapshot.appendItems(ids, toSection: 0)
+
+            if animated {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.18
+                    self.dataSource?.apply(snapshot, animatingDifferences: true)
+                }
+            } else {
+                dataSource?.apply(snapshot, animatingDifferences: false)
+            }
+        }
+
+        private func hideDropPlaceholder(animated: Bool) {
+            guard placeholderInsertionIndex != nil else { return }
+            placeholderInsertionIndex = nil
+            guard let _ = collectionView else { return }
+
+            var snapshot = NSDiffableDataSourceSnapshot<Int, UUID>()
+            snapshot.appendSections([0])
+            snapshot.appendItems(currentPhotos.map(\.id), toSection: 0)
+
+            if animated {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.18
+                    self.dataSource?.apply(snapshot, animatingDifferences: true)
+                }
+            } else {
+                dataSource?.apply(snapshot, animatingDifferences: false)
+            }
         }
     }
 }
@@ -528,6 +578,10 @@ final class MediaCollectionViewItem: NSCollectionViewItem {
     func apply(_ media: MediaItem) {
         cellView.configure(with: media)
     }
+
+    func applyPlaceholder() {
+        cellView.configureAsPlaceholder()
+    }
 }
 
 @MainActor
@@ -735,6 +789,8 @@ final class MediaThumbnailCellView: NSView {
     }
 
     func configure(with media: MediaItem) {
+        // Ensure placeholder state is cleared.
+        setPlaceholderUI(isPlaceholder: false)
         currentID = media.id
 
         // Reset UI
@@ -778,6 +834,28 @@ final class MediaThumbnailCellView: NSView {
                     }
                 }
             }
+        }
+    }
+
+    func configureAsPlaceholder() {
+        thumbnailTask?.cancel()
+        durationTask?.cancel()
+        currentID = nil
+        setPlaceholderUI(isPlaceholder: true)
+    }
+
+    private func setPlaceholderUI(isPlaceholder: Bool) {
+        backgroundView.isHidden = isPlaceholder
+        imageContainer.isHidden = isPlaceholder
+        progress.isHidden = isPlaceholder
+        placeholder.isHidden = true
+        dragIcon.isHidden = isPlaceholder
+        durationContainer.isHidden = true
+        outerSelectionLayer.isHidden = true
+        innerSelectionLayer.isHidden = true
+        if isPlaceholder {
+            imageContainer.layer?.contents = nil
+            progress.stopAnimation(nil)
         }
     }
 }

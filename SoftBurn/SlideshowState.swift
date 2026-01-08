@@ -189,5 +189,30 @@ class SlideshowState: ObservableObject {
         photos.insert(contentsOf: photosToMove, at: min(insertIndex, photos.count))
         AppSessionState.shared.markDirty()
     }
+
+    /// Move multiple photos by ID to an absolute insertion index (Photos.app-style gap insertion).
+    /// Maintains the relative order of the moved photos.
+    func movePhotos(withIDs sourceIDs: [UUID], toIndex destinationIndex: Int) {
+        guard !sourceIDs.isEmpty else { return }
+
+        // Clamp destination to current bounds (in the pre-move array).
+        let dest = max(0, min(destinationIndex, photos.count))
+
+        // Extract photos to move (in their current order).
+        let photosToMove = photos.filter { sourceIDs.contains($0.id) }
+        guard !photosToMove.isEmpty else { return }
+
+        // Count how many moved items were before the destination index, so we can adjust after removal.
+        let movedBeforeDest = photos.prefix(dest).filter { sourceIDs.contains($0.id) }.count
+
+        // Remove them from the array.
+        photos.removeAll { sourceIDs.contains($0.id) }
+
+        // Adjust destination after removal.
+        let adjustedDest = max(0, min(dest - movedBeforeDest, photos.count))
+
+        photos.insert(contentsOf: photosToMove, at: adjustedDest)
+        AppSessionState.shared.markDirty()
+    }
 }
 

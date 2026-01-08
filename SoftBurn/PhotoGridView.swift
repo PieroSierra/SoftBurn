@@ -15,7 +15,7 @@ struct PhotoGridView: View {
     let onOpenViewer: (UUID) -> Void
     let onPreviewSelection: () -> Void
     let onDrop: ([URL]) -> Void
-    let onReorder: ([UUID], UUID) -> Void // sourceIDs (all selected), targetID
+    let onReorderToIndex: ([UUID], Int) -> Void // sourceIDs (all selected), destination insertion index
     let onDragStart: (UUID) -> Void // Called when drag starts to select the item
     let onDeselectAll: () -> Void // Called when clicking on whitespace
     
@@ -27,7 +27,7 @@ struct PhotoGridView: View {
             onOpenViewer: onOpenViewer,
             onPreviewSelection: onPreviewSelection,
             onDropFiles: onDrop,
-            onReorder: onReorder,
+            onReorderToIndex: onReorderToIndex,
             onDragStart: onDragStart,
             onDeselectAll: onDeselectAll
         )

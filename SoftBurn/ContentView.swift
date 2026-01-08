@@ -76,8 +76,8 @@ struct ContentView: View {
                                 await importPhotos(from: urls)
                             }
                         },
-                        onReorder: { sourceIDs, targetID in
-                            slideshowState.movePhotos(withIDs: sourceIDs, toPositionOf: targetID)
+                        onReorderToIndex: { sourceIDs, destinationIndex in
+                            slideshowState.movePhotos(withIDs: sourceIDs, toIndex: destinationIndex)
                         },
                         onDragStart: { photoID in
                             // Select the dragged item if not already selected
