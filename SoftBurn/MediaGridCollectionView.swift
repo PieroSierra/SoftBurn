@@ -207,6 +207,142 @@ struct MediaGridCollectionView: NSViewRepresentable {
             }
         }
 
+        func collectionView(_ collectionView: NSCollectionView, draggingImageForItemsAt indexPaths: Set<IndexPath>, with event: NSEvent, offset dragImageOffset: NSPointPointer) -> NSImage {
+            // Build a Photos-like "pile" drag preview (image-only, no letterbox/background).
+            let ordered = indexPaths.sorted { $0.item < $1.item }
+            let maxPreviews = min(ordered.count, 3)
+            let visible = Array(ordered.prefix(maxPreviews))
+
+            let stackOffset: CGFloat = 12
+            let padding: CGFloat = 20
+            let maxEdge: CGFloat = 180
+
+            // Extract per-item drag images (best-effort; visible items only).
+            // Draw CGImage directly so we never get opaque/white backing from NSImage compositing.
+            let images: [(cg: CGImage, size: CGSize)] = visible.compactMap { ip in
+                guard let item = collectionView.item(at: ip) as? MediaCollectionViewItem,
+                      let r = item.dragPreviewCGImage(maxEdge: maxEdge) else {
+                    return nil
+                }
+                return r
+            }
+
+            // Fallback to default system drag image if we can't build anything.
+            if images.isEmpty {
+                // We can't call "super" here (Coordinator is NSObject). Provide a simple generic fallback.
+                let count = max(1, indexPaths.count)
+                let baseSize = CGSize(width: 120, height: 90)
+                let img = NSImage(size: baseSize, flipped: false) { rect in
+                    NSColor.clear.setFill()
+                    rect.fill()
+
+                    let r = rect.insetBy(dx: 12, dy: 12)
+                    let path = NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10)
+                    NSColor.windowBackgroundColor.withAlphaComponent(0.85).setFill()
+                    path.fill()
+
+                    NSColor.separatorColor.withAlphaComponent(0.6).setStroke()
+                    path.lineWidth = 1
+                    path.stroke()
+
+                    if let icon = NSImage(systemSymbolName: "photo", accessibilityDescription: nil) {
+                        let config = NSImage.SymbolConfiguration(pointSize: 28, weight: .regular)
+                        let configured = icon.withSymbolConfiguration(config) ?? icon
+                        configured.draw(in: CGRect(x: r.midX - 14, y: r.midY - 14, width: 28, height: 28))
+                    }
+
+                    if count > 1 {
+                        let badge = "\(count)" as NSString
+                        let attrs: [NSAttributedString.Key: Any] = [
+                            .font: NSFont.systemFont(ofSize: 13, weight: .bold),
+                            .foregroundColor: NSColor.white
+                        ]
+                        let size = badge.size(withAttributes: attrs)
+                        let badgeW = size.width + 14
+                        let badgeH = size.height + 6
+                        let bx = r.maxX - badgeW - 6
+                        let by = r.maxY - badgeH - 6
+                        let badgeRect = CGRect(x: bx, y: by, width: badgeW, height: badgeH)
+                        NSColor.controlAccentColor.setFill()
+                        NSBezierPath(roundedRect: badgeRect, xRadius: badgeH / 2, yRadius: badgeH / 2).fill()
+                        badge.draw(at: CGPoint(x: badgeRect.midX - size.width / 2, y: badgeRect.midY - size.height / 2), withAttributes: attrs)
+                    }
+
+                    return true
+                }
+                dragImageOffset.pointee = NSPoint(x: -36, y: -36)
+                return img
+            }
+
+            let widths = images.map(\.size.width)
+            let heights = images.map(\.size.height)
+            let contentW = (widths.max() ?? maxEdge) + CGFloat(images.count - 1) * stackOffset
+            let contentH = (heights.max() ?? maxEdge) + CGFloat(images.count - 1) * stackOffset
+            let canvasSize = CGSize(width: contentW + padding * 2, height: contentH + padding * 2)
+
+            let dragImage = Self.makeTransparentDragImage(size: canvasSize) { ctx in
+                for (idx, entry) in images.enumerated().reversed() {
+                    let x = padding + CGFloat(idx) * stackOffset
+                    let y = padding + CGFloat(idx) * stackOffset
+                    let r = CGRect(origin: CGPoint(x: x, y: y), size: entry.size)
+                    let corner: CGFloat = 12
+                    let roundedPath = CGPath(roundedRect: r, cornerWidth: corner, cornerHeight: corner, transform: nil)
+
+                    // Use a transparency layer so the shadow applies to the clipped image shape.
+                    ctx.saveGState()
+                    ctx.setShadow(offset: CGSize(width: 0, height: -2), blur: 6, color: NSColor.black.withAlphaComponent(0.3).cgColor)
+                    ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+
+                    // Draw image clipped to rounded rect inside the transparency layer.
+                    ctx.addPath(roundedPath)
+                    ctx.clip()
+                    ctx.interpolationQuality = .high
+                    ctx.draw(entry.cg, in: r)
+
+                    ctx.endTransparencyLayer()
+                    ctx.restoreGState()
+                }
+            }
+
+            // Place cursor near the top-left corner of the front (topmost) image.
+            // Front image is at (padding, padding), so offset cursor to be just inside that.
+            dragImageOffset.pointee = NSPoint(x: -(padding + 20), y: -(padding + 20))
+            return dragImage
+        }
+
+        private static func makeTransparentDragImage(size: CGSize, draw: (CGContext) -> Void) -> NSImage {
+            let w = max(1, Int(ceil(size.width)))
+            let h = max(1, Int(ceil(size.height)))
+
+            // Use CGBitmapContext directly for guaranteed transparency handling.
+            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+            let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+
+            guard let ctx = CGContext(
+                data: nil,
+                width: w,
+                height: h,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo.rawValue
+            ) else {
+                return NSImage(size: size)
+            }
+
+            // Explicitly clear to fully transparent.
+            ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0))
+            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+
+            draw(ctx)
+
+            guard let cgImage = ctx.makeImage() else {
+                return NSImage(size: size)
+            }
+
+            return NSImage(cgImage: cgImage, size: size)
+        }
+
         func collectionView(_ collectionView: NSCollectionView, draggingSession session: NSDraggingSession, endedAt screenPoint: NSPoint, dragOperation operation: NSDragOperation) {
             currentlyDraggingIDs.removeAll()
             hideDropPlaceholder(animated: true)
@@ -575,6 +711,49 @@ final class MediaCollectionViewItem: NSCollectionViewItem {
         }
     }
 
+    // Override to provide a clean drag image without the cell's background view.
+    // Returns a rounded-rect clipped image at a reasonable drag preview size.
+    override var draggingImageComponents: [NSDraggingImageComponent] {
+        let maxEdge: CGFloat = 160
+        let corner: CGFloat = 10
+        
+        guard let (cg, size) = cellView.dragPreviewCGImage(maxEdge: maxEdge) else {
+            return []
+        }
+        
+        // Create a rounded-rect clipped version of the image.
+        let w = Int(ceil(size.width))
+        let h = Int(ceil(size.height))
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+        
+        guard let ctx = CGContext(
+            data: nil, width: w, height: h,
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: colorSpace, bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            return []
+        }
+        
+        let rect = CGRect(origin: .zero, size: size)
+        let path = CGPath(roundedRect: rect, cornerWidth: corner, cornerHeight: corner, transform: nil)
+        
+        ctx.addPath(path)
+        ctx.clip()
+        ctx.interpolationQuality = .high
+        ctx.draw(cg, in: rect)
+        
+        guard let clippedCG = ctx.makeImage() else {
+            return []
+        }
+        
+        let image = NSImage(cgImage: clippedCG, size: size)
+        let component = NSDraggingImageComponent(key: .icon)
+        component.contents = image
+        component.frame = CGRect(origin: .zero, size: size)
+        return [component]
+    }
+
     func apply(_ media: MediaItem) {
         cellView.configure(with: media)
     }
@@ -582,12 +761,21 @@ final class MediaCollectionViewItem: NSCollectionViewItem {
     func applyPlaceholder() {
         cellView.configureAsPlaceholder()
     }
+
+    func dragPreviewImage(maxEdge: CGFloat) -> NSImage? {
+        cellView.dragPreviewImage(maxEdge: maxEdge)
+    }
+
+    func dragPreviewCGImage(maxEdge: CGFloat) -> (CGImage, CGSize)? {
+        cellView.dragPreviewCGImage(maxEdge: maxEdge)
+    }
 }
 
 @MainActor
 final class MediaThumbnailCellView: NSView {
     private let backgroundView = NSView()
     private let imageContainer = NSView()
+    private let imageLayer = CALayer()
     private let progress = NSProgressIndicator()
     private let placeholder = NSImageView()
 
@@ -602,6 +790,8 @@ final class MediaThumbnailCellView: NSView {
     private let innerSelectionLayer = CAShapeLayer()
 
     private var currentID: UUID?
+    private var currentImagePixelSize: CGSize?
+    private var currentImageRect: CGRect = .zero
     private var thumbnailTask: Task<Void, Never>?
     private var durationTask: Task<Void, Never>?
 
@@ -632,9 +822,22 @@ final class MediaThumbnailCellView: NSView {
         backgroundView.layer?.shadowOffset = CGSize(width: 0, height: -1)
 
         imageContainer.wantsLayer = true
-        imageContainer.layer?.cornerRadius = 8
-        imageContainer.layer?.masksToBounds = true
-        imageContainer.layer?.contentsGravity = .resizeAspectFill
+        imageContainer.layer?.backgroundColor = NSColor.clear.cgColor
+        imageContainer.layer?.masksToBounds = false
+
+        imageLayer.contentsGravity = .resizeAspect
+        imageLayer.masksToBounds = true
+        imageLayer.cornerRadius = 8
+        imageLayer.backgroundColor = NSColor.clear.cgColor
+        imageLayer.actions = [
+            "bounds": NSNull(),
+            "position": NSNull(),
+            "contents": NSNull(),
+            "cornerRadius": NSNull(),
+            "transform": NSNull(),
+            "opacity": NSNull()
+        ]
+        imageContainer.layer?.addSublayer(imageLayer)
 
         placeholder.image = NSImage(systemSymbolName: "photo", accessibilityDescription: nil)
         placeholder.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 20, weight: .regular)
@@ -688,6 +891,8 @@ final class MediaThumbnailCellView: NSView {
         // Draw selection ABOVE the thumbnail image, without clipping so the blue stroke can sit around the tile.
         selectionOverlay.layer?.addSublayer(outerSelectionLayer)
         selectionOverlay.layer?.addSublayer(innerSelectionLayer)
+        outerSelectionLayer.actions = ["path": NSNull(), "bounds": NSNull(), "position": NSNull(), "opacity": NSNull()]
+        innerSelectionLayer.actions = ["path": NSNull(), "bounds": NSNull(), "position": NSNull(), "opacity": NSNull()]
 
         outerSelectionLayer.isHidden = true
         innerSelectionLayer.isHidden = true
@@ -696,7 +901,7 @@ final class MediaThumbnailCellView: NSView {
         imageContainer.translatesAutoresizingMaskIntoConstraints = false
         progress.translatesAutoresizingMaskIntoConstraints = false
         placeholder.translatesAutoresizingMaskIntoConstraints = false
-        dragIcon.translatesAutoresizingMaskIntoConstraints = false
+        dragIcon.translatesAutoresizingMaskIntoConstraints = true
         // Duration pill is laid out manually (avoid Auto Layout collapsing the container).
         durationContainer.translatesAutoresizingMaskIntoConstraints = true
         durationEffect.translatesAutoresizingMaskIntoConstraints = true
@@ -720,8 +925,7 @@ final class MediaThumbnailCellView: NSView {
             placeholder.centerXAnchor.constraint(equalTo: centerXAnchor),
             placeholder.centerYAnchor.constraint(equalTo: centerYAnchor),
 
-            dragIcon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            dragIcon.topAnchor.constraint(equalTo: topAnchor, constant: 14)
+            // Drag icon is positioned manually relative to the aspect-fit image rect.
         ])
 
         NSLayoutConstraint.activate([
@@ -735,6 +939,8 @@ final class MediaThumbnailCellView: NSView {
     override func layout() {
         super.layout()
         backgroundView.layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 8, cornerHeight: 8, transform: nil)
+        layoutImageLayer()
+        layoutDragIcon()
         updateSelectionPaths()
         layoutDurationPill()
     }
@@ -756,10 +962,11 @@ final class MediaThumbnailCellView: NSView {
         outerSelectionLayer.frame = outerRect
         innerSelectionLayer.frame = outerRect
 
-        // Outer path is the full bounds so half the stroke renders outside the tile (looks "around" it).
-        outerSelectionLayer.path = CGPath(roundedRect: outerRect, cornerWidth: corner, cornerHeight: corner, transform: nil)
+        // Selection follows the displayed image rect (portrait/landscape), not the square cell.
+        let r = currentImageRect.isEmpty ? outerRect : currentImageRect
+        outerSelectionLayer.path = CGPath(roundedRect: r, cornerWidth: corner, cornerHeight: corner, transform: nil)
         innerSelectionLayer.path = CGPath(
-            roundedRect: outerRect.insetBy(dx: innerInset, dy: innerInset),
+            roundedRect: r.insetBy(dx: innerInset, dy: innerInset),
             cornerWidth: max(0, corner - innerInset),
             cornerHeight: max(0, corner - innerInset),
             transform: nil
@@ -777,15 +984,41 @@ final class MediaThumbnailCellView: NSView {
         let pillW = labelSize.width + paddingX * 2
         let pillH = labelSize.height + paddingY * 2
 
-        let origin = CGPoint(
-            x: bounds.maxX - inset - pillW,
-            y: inset
-        )
+        let anchorRect = currentImageRect.isEmpty ? bounds : currentImageRect
+        let origin = CGPoint(x: anchorRect.maxX - inset - pillW, y: anchorRect.minY + inset)
 
         durationContainer.frame = CGRect(origin: origin, size: CGSize(width: pillW, height: pillH))
         durationEffect.frame = durationContainer.bounds
         durationLabel.frame = CGRect(x: paddingX, y: paddingY, width: labelSize.width, height: labelSize.height)
         durationEffect.layer?.cornerRadius = pillH / 2
+    }
+
+    private func layoutImageLayer() {
+        let container = bounds
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        guard let px = currentImagePixelSize, px.width > 0, px.height > 0 else {
+            currentImageRect = container
+            imageLayer.frame = container
+            return
+        }
+
+        let scale = min(container.width / px.width, container.height / px.height)
+        let fitted = CGSize(width: px.width * scale, height: px.height * scale)
+        let origin = CGPoint(x: (container.width - fitted.width) / 2.0, y: (container.height - fitted.height) / 2.0)
+        let rect = CGRect(origin: origin, size: fitted).integral
+        currentImageRect = rect
+        imageLayer.frame = rect
+        imageLayer.cornerRadius = 8
+    }
+
+    private func layoutDragIcon() {
+        let inset: CGFloat = 10
+        let size: CGFloat = 20
+        let anchor = currentImageRect.isEmpty ? bounds : currentImageRect
+        dragIcon.frame = CGRect(x: anchor.minX + inset, y: anchor.maxY - inset - size, width: size, height: size)
     }
 
     func configure(with media: MediaItem) {
@@ -794,7 +1027,11 @@ final class MediaThumbnailCellView: NSView {
         currentID = media.id
 
         // Reset UI
-        imageContainer.layer?.contents = nil
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        imageLayer.contents = nil
+        CATransaction.commit()
+        currentImagePixelSize = nil
         progress.startAnimation(nil)
         placeholder.isHidden = true
         durationContainer.isHidden = true
@@ -811,11 +1048,21 @@ final class MediaThumbnailCellView: NSView {
                 guard let self, self.currentID == id else { return }
                 self.progress.stopAnimation(nil)
                 if let thumb, let cg = thumb.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                    self.imageContainer.layer?.contents = cg
+                    self.currentImagePixelSize = CGSize(width: cg.width, height: cg.height)
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    self.imageLayer.contents = cg
+                    CATransaction.commit()
                     self.placeholder.isHidden = true
+                    self.needsLayout = true
                 } else {
-                    self.imageContainer.layer?.contents = nil
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    self.imageLayer.contents = nil
+                    CATransaction.commit()
+                    self.currentImagePixelSize = nil
                     self.placeholder.isHidden = false
+                    self.needsLayout = true
                 }
             }
         }
@@ -841,6 +1088,11 @@ final class MediaThumbnailCellView: NSView {
         thumbnailTask?.cancel()
         durationTask?.cancel()
         currentID = nil
+        currentImagePixelSize = nil
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        imageLayer.contents = nil
+        CATransaction.commit()
         setPlaceholderUI(isPlaceholder: true)
     }
 
@@ -854,9 +1106,44 @@ final class MediaThumbnailCellView: NSView {
         outerSelectionLayer.isHidden = true
         innerSelectionLayer.isHidden = true
         if isPlaceholder {
-            imageContainer.layer?.contents = nil
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            imageLayer.contents = nil
+            CATransaction.commit()
+            currentImagePixelSize = nil
             progress.stopAnimation(nil)
         }
+        needsLayout = true
+    }
+
+    func dragPreviewImage(maxEdge: CGFloat) -> NSImage? {
+        guard let contents = imageLayer.contents else { return nil }
+        let cg = contents as! CGImage
+        let px = CGSize(width: cg.width, height: cg.height)
+        guard px.width > 0, px.height > 0 else { return nil }
+
+        let scale = min(maxEdge / px.width, maxEdge / px.height)
+        let size = CGSize(width: floor(px.width * scale), height: floor(px.height * scale))
+
+        return NSImage(size: size, flipped: false) { rect in
+            if let ctx = NSGraphicsContext.current?.cgContext {
+                ctx.clear(rect)
+                ctx.interpolationQuality = .high
+                ctx.draw(cg, in: rect)
+            }
+            return true
+        }
+    }
+
+    func dragPreviewCGImage(maxEdge: CGFloat) -> (CGImage, CGSize)? {
+        guard let contents = imageLayer.contents else { return nil }
+        let cg = contents as! CGImage
+        let px = CGSize(width: cg.width, height: cg.height)
+        guard px.width > 0, px.height > 0 else { return nil }
+
+        let scale = min(maxEdge / px.width, maxEdge / px.height)
+        let size = CGSize(width: floor(px.width * scale), height: floor(px.height * scale))
+        return (cg, size)
     }
 }
 
