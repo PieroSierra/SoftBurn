@@ -44,10 +44,14 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
-                // Toolbar
-                toolbar
-                
-                Divider()
+                // On macOS < 26 we keep the existing in-content toolbar (pixel-identical).
+                // On macOS 26+ we use the system toolbar so Tahoe can render Liquid Glass.
+                if #available(macOS 26.0, *) {
+                    // No custom toolbar chrome.
+                } else {
+                    toolbar
+                    Divider()
+                }
                 
                 // Main content area
                 if slideshowState.isEmpty {
@@ -108,6 +112,78 @@ struct ContentView: View {
                 .zIndex(1000)
             }
         }
+        .toolbar {
+            if #available(macOS 26.0, *) {
+                // Leading controls
+                ToolbarItemGroup(placement: .navigation) {
+                    Button(action: {
+                        importMode = .photos
+                        isImporting = true
+                    }) {
+                        Label("Add Media", systemImage: "plus")
+                    }
+                    .help("Add media")
+
+                    Button(action: {
+                        importMode = .slideshow
+                        isImporting = true
+                    }) {
+                        Label("Open", systemImage: "folder")
+                    }
+                    .help("Open slideshow")
+
+                    Button(action: {
+                        beginSave()
+                    }) {
+                        Label("Save", systemImage: "square.and.arrow.down")
+                    }
+                    .help("Save")
+                    .disabled(slideshowState.isEmpty)
+                }
+
+                // Center status
+                ToolbarItem(placement: .principal) {
+                    if !slideshowState.isEmpty {
+                        Text(photoCountText)
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                // Trailing controls
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button(action: {
+                        slideshowState.removeSelectedPhotos()
+                    }) {
+                        Image(systemName: "trash")
+                    }
+                    .help("Remove from slideshow")
+                    .disabled(!slideshowState.hasSelection)
+
+                    Button(action: {
+                        showSettings.toggle()
+                    }) {
+                        Image(systemName: "gearshape")
+                    }
+                    .help("Slideshow settings")
+                    .popover(isPresented: $showSettings, arrowEdge: .bottom) {
+                        // On macOS 26 the system popover adopts the new glass styling automatically.
+                        // Do not wrap in custom backgrounds or clip shapes.
+                        SettingsPopoverView(settings: settings)
+                    }
+
+                    Button(action: {
+                        isPlayingSlideshow = true
+                    }) {
+                        Label("Play", systemImage: "play.fill")
+                            .foregroundStyle(slideshowState.isEmpty ? Color.secondary : Color.blue)
+                    }
+                    .help("Play slideshow")
+                    .disabled(slideshowState.isEmpty)
+                }
+            }
+        }
+        .softBurnWindowToolbarLiquidGlass()
         // Single file importer for both photos and slideshows
         .fileImporter(
             isPresented: $isImporting,
@@ -372,7 +448,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color(NSColor.controlBackgroundColor))
+        .softBurnToolbarBackground()
     }
     
     private var photoCountText: String {

@@ -17,6 +17,7 @@ struct SoftBurnApp: App {
             ContentView()
                 .environmentObject(session)
         }
+        .softBurnWindowToolbarStyleForTahoe()
         .commands {
             // Add standard macOS commands
             CommandGroup(replacing: .newItem) {}
