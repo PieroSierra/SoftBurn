@@ -37,66 +37,44 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var pendingOpenURL: URL?
     @State private var isPlayingSlideshow = false
+    @State private var slideshowStartingPhotoID: UUID?
     @State private var isShowingViewer = false
     @State private var viewerStartID: UUID?
     @State private var mainWindowSize: CGSize = CGSize(width: 1000, height: 700)
     
+    /// Height of our custom toolbar (used for content inset on older macOS).
+    private let customToolbarHeight: CGFloat = 44
+    
     var body: some View {
         ZStack {
-            VStack(spacing: 0) {
-                // On macOS < 26 we keep the existing in-content toolbar (pixel-identical).
-                // On macOS 26+ we use the system toolbar so Tahoe can render Liquid Glass.
-                if #available(macOS 26.0, *) {
-                    // No custom toolbar chrome.
-                } else {
+            // Background color for the window
+            Color(NSColor.controlBackgroundColor)
+                .ignoresSafeArea()
+            
+            // Main content area (fills entire space, scrolls under toolbar)
+            contentArea
+                .ignoresSafeArea(edges: .top) // Extend under system toolbar on macOS 26
+            
+            // On older macOS, overlay our custom toolbar + fade gradient
+            if #unavailable(macOS 26.0) {
+                VStack(spacing: 0) {
                     toolbar
-                    Divider()
-                }
-                
-                // Main content area
-                if slideshowState.isEmpty {
-                    EmptyStateView { urls in
-                        Task {
-                            await importPhotos(from: urls)
-                        }
-                    }
-                } else {
-                    PhotoGridView(
-                        photos: slideshowState.photos,
-                        selectedPhotoIDs: $slideshowState.selectedPhotoIDs,
-                        onUserClickItem: { photoID in
-                            if let idx = slideshowState.photos.firstIndex(where: { $0.id == photoID }) {
-                                lastSelectedIndex = idx
-                            }
-                        },
-                        onOpenViewer: { photoID in
-                            openViewer(for: photoID)
-                        },
-                        onPreviewSelection: {
-                            openViewerForSelection()
-                        },
-                        onDrop: { urls in
-                            Task {
-                                await importPhotos(from: urls)
-                            }
-                        },
-                        onReorderToIndex: { sourceIDs, destinationIndex in
-                            slideshowState.movePhotos(withIDs: sourceIDs, toIndex: destinationIndex)
-                        },
-                        onDragStart: { photoID in
-                            // Select the dragged item if not already selected
-                            if !slideshowState.selectedPhotoIDs.contains(photoID) {
-                                slideshowState.deselectAll()
-                                slideshowState.toggleSelection(for: photoID)
-                            }
-                        },
-                        onDeselectAll: {
-                            slideshowState.deselectAll()
-                        }
+                    
+                    // Fade gradient so content fades as it scrolls under toolbar
+                    LinearGradient(
+                        colors: [
+                            Color(NSColor.controlBackgroundColor).opacity(0.9),
+                            Color(NSColor.controlBackgroundColor).opacity(0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
                     )
+                    .frame(height: 20)
+                    
+                    Spacer()
                 }
             }
-            .frame(minWidth: 800, minHeight: 600)
+            // On macOS 26, the Liquid Glass toolbar handles its own blending - no extra gradient needed
             
             // Full-screen overlay viewer (no sheet chrome)
             if isShowingViewer, let startID = viewerStartID {
@@ -106,12 +84,17 @@ struct ContentView: View {
                     onDismiss: {
                         isShowingViewer = false
                         viewerStartID = nil
+                    },
+                    onPlaySlideshow: { photoID in
+                        // Start slideshow from the specified photo
+                        startSlideshow(fromPhotoID: photoID)
                     }
                 )
                 .transition(.opacity)
                 .zIndex(1000)
             }
         }
+        .frame(minWidth: 800, minHeight: 600)
         .toolbar {
             if #available(macOS 26.0, *) {
                 // Leading controls
@@ -173,7 +156,7 @@ struct ContentView: View {
                     }
 
                     Button(action: {
-                        isPlayingSlideshow = true
+                        startSlideshow()
                     }) {
                         Label("Play", systemImage: "play.fill")
                             .foregroundStyle(slideshowState.isEmpty ? Color.secondary : Color.blue)
@@ -337,14 +320,43 @@ struct ContentView: View {
     
     // MARK: - Slideshow Window
     
+    /// Starts the slideshow, computing the starting photo based on selection.
+    /// - If there's a selection and shuffle is OFF, starts from the last selected photo.
+    /// - If shuffle is ON, starts randomly (ignores selection).
+    /// - If no selection, starts from the first photo.
+    /// - Parameter fromPhotoID: Optional explicit photo ID to start from (e.g., from viewer).
+    ///                          If provided, this takes precedence over selection.
+    private func startSlideshow(fromPhotoID explicitID: UUID? = nil) {
+        // Determine starting photo ID
+        var startID: UUID? = nil
+        
+        if let explicitID {
+            // Explicit ID provided (e.g., from viewer Play button)
+            startID = explicitID
+        } else if slideshowState.hasSelection {
+            // Use the last selected photo (same logic as viewer preview)
+            if let idx = lastSelectedIndex, idx < slideshowState.photos.count {
+                startID = slideshowState.photos[idx].id
+            } else if let firstSelected = slideshowState.photos.first(where: { slideshowState.selectedPhotoIDs.contains($0.id) }) {
+                startID = firstSelected.id
+            }
+        }
+        // If no selection and no explicit ID, startID remains nil (starts from beginning)
+        
+        slideshowStartingPhotoID = startID
+        isPlayingSlideshow = true
+    }
+    
     private func openSlideshowWindow() {
         SlideshowWindowController.shared.onClose = { [self] in
             isPlayingSlideshow = false
+            slideshowStartingPhotoID = nil
         }
 
         let slideshowView = SlideshowPlayerView(
             photos: slideshowState.photos,
             settings: settings,
+            startingPhotoID: slideshowStartingPhotoID,
             onExit: {
                 SlideshowWindowController.shared.close()
             }
@@ -358,6 +370,65 @@ struct ContentView: View {
     
     private func closeSlideshowWindow() {
         SlideshowWindowController.shared.close()
+    }
+    
+    // MARK: - Content Area
+    
+    @ViewBuilder
+    private var contentArea: some View {
+        // Calculate toolbar inset so content starts below toolbar but can scroll under it.
+        // On macOS 26 content extends under system toolbar via ignoresSafeArea.
+        // On older macOS we extend under our custom toolbar + fade gradient.
+        let toolbarInset: CGFloat = {
+            if #available(macOS 26.0, *) {
+                return 52 // Approximate height of system toolbar so content starts visible below it
+            } else {
+                return customToolbarHeight + 20 // Toolbar + fade gradient
+            }
+        }()
+        
+        if slideshowState.isEmpty {
+            EmptyStateView { urls in
+                Task {
+                    await importPhotos(from: urls)
+                }
+            }
+        } else {
+            PhotoGridView(
+                photos: slideshowState.photos,
+                selectedPhotoIDs: $slideshowState.selectedPhotoIDs,
+                toolbarInset: toolbarInset,
+                onUserClickItem: { photoID in
+                    if let idx = slideshowState.photos.firstIndex(where: { $0.id == photoID }) {
+                        lastSelectedIndex = idx
+                    }
+                },
+                onOpenViewer: { photoID in
+                    openViewer(for: photoID)
+                },
+                onPreviewSelection: {
+                    openViewerForSelection()
+                },
+                onDrop: { urls in
+                    Task {
+                        await importPhotos(from: urls)
+                    }
+                },
+                onReorderToIndex: { sourceIDs, destinationIndex in
+                    slideshowState.movePhotos(withIDs: sourceIDs, toIndex: destinationIndex)
+                },
+                onDragStart: { photoID in
+                    // Select the dragged item if not already selected
+                    if !slideshowState.selectedPhotoIDs.contains(photoID) {
+                        slideshowState.deselectAll()
+                        slideshowState.toggleSelection(for: photoID)
+                    }
+                },
+                onDeselectAll: {
+                    slideshowState.deselectAll()
+                }
+            )
+        }
     }
     
     // MARK: - Toolbar
@@ -435,7 +506,7 @@ struct ContentView: View {
                 }
                 
                 Button(action: {
-                    isPlayingSlideshow = true
+                    startSlideshow()
                 }) {
                     Image(systemName: "play.fill")
                         .frame(width: 20, height: 20)
@@ -453,9 +524,9 @@ struct ContentView: View {
     
     private var photoCountText: String {
         if slideshowState.hasSelection {
-            return "\(slideshowState.selectedCount) of \(slideshowState.photoCount) selected"
+            return "  \(slideshowState.selectedCount) of \(slideshowState.photoCount) selected  "
         } else {
-            return "\(slideshowState.photoCount) photos"
+            return "  \(slideshowState.photoCount) photos  "
         }
     }
     

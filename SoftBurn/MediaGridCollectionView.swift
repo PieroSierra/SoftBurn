@@ -16,6 +16,9 @@ extension NSPasteboard.PasteboardType {
 struct MediaGridCollectionView: NSViewRepresentable {
     let photos: [MediaItem]
     @Binding var selectedPhotoIDs: Set<UUID>
+    
+    /// Extra top inset so content can scroll under a translucent toolbar.
+    var toolbarInset: CGFloat = 0
 
     /// Called when user clicks an item (used to update "last selected index" anchor in SwiftUI).
     let onUserClickItem: (UUID) -> Void
@@ -45,6 +48,7 @@ struct MediaGridCollectionView: NSViewRepresentable {
     func makeNSView(context: Context) -> MediaGridContainerView {
         let container = MediaGridContainerView()
         container.configure()
+        container.toolbarInset = toolbarInset
 
         container.onPerformExternalDrop = { urls in
             self.onDropFiles(urls)
@@ -71,6 +75,7 @@ struct MediaGridCollectionView: NSViewRepresentable {
 
     func updateNSView(_ nsView: MediaGridContainerView, context: Context) {
         context.coordinator.parent = self
+        nsView.toolbarInset = toolbarInset
         context.coordinator.apply(photos: photos, to: nsView.collectionView)
         context.coordinator.syncSelection(to: nsView.collectionView, selectedIDs: selectedPhotoIDs)
     }
@@ -424,7 +429,9 @@ struct MediaGridCollectionView: NSViewRepresentable {
 
             // With `.before`, `indexPath.item` is the insertion index (can be == count).
             let insertionIndex = placeholderInsertionIndex ?? max(0, min(indexPath.item, currentPhotos.count))
-            hideDropPlaceholder(animated: false)
+            // Clear placeholder state but don't apply a snapshot here — let the state change
+            // from onReorderToIndex trigger a single animated update to the new order.
+            placeholderInsertionIndex = nil
             parent.onReorderToIndex(idsToMove, insertionIndex)
             return true
         }
@@ -481,23 +488,29 @@ final class MediaGridContainerView: NSView {
     let collectionView = MediaCollectionView()
 
     private let flowLayout = NSCollectionViewFlowLayout()
+    
+    /// Extra top inset so content scrolls under the toolbar but starts below it.
+    var toolbarInset: CGFloat = 0 {
+        didSet { updateContentInsets() }
+    }
 
     var onPerformExternalDrop: (([URL]) -> Void)?
 
     func configure() {
         wantsLayer = true
-        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        // Transparent background so content shows through translucent toolbar
+        layer?.backgroundColor = NSColor.clear.cgColor
 
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = .controlBackgroundColor
+        // Transparent scroll view background
+        scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
         scrollView.registerForDraggedTypes([.fileURL])
 
-        // Ensure we always have whitespace below the last row for deselect + marquee start.
-        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 120, right: 0)
+        updateContentInsets()
 
         collectionView.isSelectable = true
         collectionView.allowsMultipleSelection = true
@@ -509,7 +522,8 @@ final class MediaGridContainerView: NSView {
         flowLayout.scrollDirection = .vertical
 
         collectionView.collectionViewLayout = flowLayout
-        collectionView.backgroundColors = [.controlBackgroundColor]
+        // Transparent collection view background
+        collectionView.backgroundColors = [.clear]
         collectionView.registerForDraggedTypes([.softburnMediaID, .fileURL])
 
         scrollView.documentView = collectionView
@@ -526,6 +540,13 @@ final class MediaGridContainerView: NSView {
         scrollView.onPerformExternalDrop = { [weak self] urls in
             self?.onPerformExternalDrop?(urls)
         }
+    }
+    
+    private func updateContentInsets() {
+        // Top inset accounts for toolbar; bottom gives whitespace for deselect + marquee.
+        scrollView.contentInsets = NSEdgeInsets(top: toolbarInset, left: 0, bottom: 120, right: 0)
+        // Auto-scroll to top of content when inset changes (prevents jump).
+        scrollView.automaticallyAdjustsContentInsets = false
     }
 
     override func layout() {

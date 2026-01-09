@@ -10,6 +10,9 @@ struct PhotoViewerSheet: View {
     @ObservedObject var slideshowState: SlideshowState
     let startingPhotoID: UUID
     let onDismiss: () -> Void
+    /// Callback to start slideshow from a specific photo ID.
+    /// The viewer will be dismissed before the slideshow starts.
+    var onPlaySlideshow: ((UUID) -> Void)?
 
     @ObservedObject private var settings = SlideshowSettings.shared
 
@@ -113,6 +116,10 @@ struct PhotoViewerSheet: View {
                 hudButton(systemName: "trash") { removeCurrentPhoto() }
                     .help("Remove from slideshow (does not delete files)")
                     .disabled(slideshowState.photos.isEmpty)
+                
+                hudButton(systemName: "play.fill") { playFromCurrentPhoto() }
+                    .help("Play slideshow from this photo")
+                    .disabled(slideshowState.photos.isEmpty)
             }
                 .padding(12)
         }
@@ -208,6 +215,19 @@ struct PhotoViewerSheet: View {
 
         resetTransform()
         Task { await loadCurrentMedia() }
+    }
+    
+    private func playFromCurrentPhoto() {
+        guard !slideshowState.photos.isEmpty,
+              let item = currentItem else { return }
+        
+        // Dismiss the viewer first, then start the slideshow
+        onDismiss()
+        
+        // Use a slight delay to ensure the viewer is dismissed before slideshow starts
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            onPlaySlideshow?(item.id)
+        }
     }
 
     private var currentItem: MediaItem? {

@@ -11,6 +11,7 @@ import SwiftUI
 struct PhotoGridView: View {
     let photos: [MediaItem]
     @Binding var selectedPhotoIDs: Set<UUID>
+    var toolbarInset: CGFloat = 0
     let onUserClickItem: (UUID) -> Void
     let onOpenViewer: (UUID) -> Void
     let onPreviewSelection: () -> Void
@@ -23,6 +24,7 @@ struct PhotoGridView: View {
         MediaGridCollectionView(
             photos: photos,
             selectedPhotoIDs: $selectedPhotoIDs,
+            toolbarInset: toolbarInset,
             onUserClickItem: onUserClickItem,
             onOpenViewer: onOpenViewer,
             onPreviewSelection: onPreviewSelection,

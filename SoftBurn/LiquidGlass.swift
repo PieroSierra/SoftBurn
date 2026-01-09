@@ -11,7 +11,8 @@ import SwiftUI
 
 extension View {
     /// Background for our top toolbar strip.
-    /// On older macOS we preserve the current opaque look.
+    /// On macOS 26 we let the system handle glass.
+    /// On older macOS we use a semi-transparent material so content scrolls under.
     @ViewBuilder
     func softBurnToolbarBackground() -> some View {
         if #available(macOS 26.0, *) {
@@ -19,7 +20,8 @@ extension View {
             // The system toolbar (via .toolbar / .toolbarBackground) owns the chrome.
             self
         } else {
-            self.background(Color(NSColor.controlBackgroundColor))
+            // Semi-transparent so photos can scroll underneath and show through
+            self.background(.ultraThinMaterial)
         }
     }
 

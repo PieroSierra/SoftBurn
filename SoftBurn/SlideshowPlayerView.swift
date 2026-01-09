@@ -19,17 +19,34 @@ struct SlideshowPlayerView: View {
     @StateObject private var playerState: SlideshowPlayerState
     @State private var isExiting = false
     
-    init(photos: [MediaItem], settings: SlideshowSettings, onExit: @escaping () -> Void) {
+    /// Creates a slideshow player view.
+    /// - Parameters:
+    ///   - photos: All photos in the slideshow
+    ///   - settings: Slideshow settings
+    ///   - startingPhotoID: If provided and shuffle is OFF, playback starts from this photo.
+    ///                      If shuffle is ON, this is ignored and playback starts randomly.
+    ///   - onExit: Callback when the slideshow exits
+    init(photos: [MediaItem], settings: SlideshowSettings, startingPhotoID: UUID? = nil, onExit: @escaping () -> Void) {
         self.photos = photos
         self.settings = settings
         self.onExit = onExit
         
         // Create playback list (shuffle if needed)
         let playbackPhotos: [MediaItem]
+        let startIndex: Int
+        
         if settings.shuffle {
             playbackPhotos = photos.shuffled()
+            startIndex = 0 // Shuffle always starts from the beginning of the shuffled list
         } else {
             playbackPhotos = photos
+            // Find the starting index based on startingPhotoID
+            if let id = startingPhotoID,
+               let idx = photos.firstIndex(where: { $0.id == id }) {
+                startIndex = idx
+            } else {
+                startIndex = 0
+            }
         }
         
         _playerState = StateObject(wrappedValue: SlideshowPlayerState(
@@ -37,7 +54,8 @@ struct SlideshowPlayerView: View {
             slideDuration: settings.slideDuration,
             transitionStyle: settings.transitionStyle,
             playVideosWithSound: settings.playVideosWithSound,
-            playVideosInFull: settings.playVideosInFull
+            playVideosInFull: settings.playVideosInFull,
+            startIndex: startIndex
         ))
     }
     
@@ -165,24 +183,30 @@ class SlideshowPlayerState: ObservableObject {
         }
     }
     
+    /// The index to start playback from (defaults to 0)
+    private let startIndex: Int
+    
     init(
         photos: [MediaItem],
         slideDuration: Double,
         transitionStyle: SlideshowDocument.Settings.TransitionStyle,
         playVideosWithSound: Bool,
-        playVideosInFull: Bool
+        playVideosInFull: Bool,
+        startIndex: Int = 0
     ) {
         self.photos = photos
         self.slideDuration = slideDuration
         self.transitionStyle = transitionStyle
         self.playVideosWithSound = playVideosWithSound
         self.playVideosInFull = playVideosInFull
+        self.startIndex = startIndex
     }
     
     func start() {
         guard !photos.isEmpty, !isStopped else { return }
         isRunning = true
-        currentIndex = 0
+        // Use the provided start index (clamped to valid range)
+        currentIndex = max(0, min(startIndex, photos.count - 1))
         animationProgress = 0
         isTransitioning = false
         didStartNextVideoThisCycle = false
