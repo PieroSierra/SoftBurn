@@ -19,6 +19,15 @@ struct SoftBurnApp: App {
         }
         .softBurnWindowToolbarStyleForTahoe()
         .commands {
+            // Replace default About panel with a custom one (Photos-style layout).
+            CommandGroup(replacing: .appInfo) {
+                Button {
+                    AboutWindowController.shared.show()
+                } label: {
+                    Label("About SoftBurn", systemImage: "info.circle")
+                }
+            }
+
             // Add standard macOS commands
             CommandGroup(replacing: .newItem) {}
         }
