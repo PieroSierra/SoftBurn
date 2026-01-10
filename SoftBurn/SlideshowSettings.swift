@@ -57,6 +57,15 @@ class SlideshowSettings: ObservableObject {
         didSet { storedPlayVideosInFull = playVideosInFull }
     }
     
+    /// Music selection (per-document, not persisted to UserDefaults)
+    @Published var musicSelection: String? = nil
+    
+    /// Music volume (0-100, per-document, not persisted to UserDefaults)
+    @Published var musicVolume: Int = 60
+    
+    /// Custom music file URL (per-document, not persisted to UserDefaults)
+    @Published var customMusicURL: URL? = nil
+    
     /// Debug-only: draw detected face rectangles over the slideshow image.
     /// This property exists in Release too (always false), but the UI toggle is only shown in DEBUG builds.
 #if DEBUG
@@ -99,6 +108,8 @@ class SlideshowSettings: ObservableObject {
         settings.slideDuration = slideDuration
         settings.playVideosWithSound = playVideosWithSound
         settings.playVideosInFull = playVideosInFull
+        settings.musicSelection = musicSelection
+        settings.musicVolume = musicVolume
         return settings
     }
     
@@ -111,6 +122,17 @@ class SlideshowSettings: ObservableObject {
         slideDuration = settings.slideDuration
         playVideosWithSound = settings.playVideosWithSound
         playVideosInFull = settings.playVideosInFull
+        musicSelection = settings.musicSelection
+        musicVolume = settings.musicVolume
+        
+        // Restore custom music URL if it's a custom selection
+        if let selection = settings.musicSelection,
+           let url = URL(string: selection),
+           url.isFileURL {
+            customMusicURL = url
+        } else {
+            customMusicURL = nil
+        }
     }
 }
 

@@ -62,6 +62,10 @@ struct SlideshowDocument: Codable {
         var slideDuration: Double // seconds per slide
         var playVideosWithSound: Bool
         var playVideosInFull: Bool
+        /// Music selection: nil = none, "winters_tale" / "brighter_plans" / "innovation" = built-in, or custom file URL string
+        var musicSelection: String?
+        /// Music volume (0-100), default 60
+        var musicVolume: Int
         
         init() {
             self.shuffle = false
@@ -71,6 +75,8 @@ struct SlideshowDocument: Codable {
             self.slideDuration = 5.0
             self.playVideosWithSound = false
             self.playVideosInFull = false
+            self.musicSelection = nil
+            self.musicVolume = 60
         }
 
         init(from decoder: Decoder) throws {
@@ -82,6 +88,8 @@ struct SlideshowDocument: Codable {
             self.slideDuration = (try? c.decode(Double.self, forKey: .slideDuration)) ?? 5.0
             self.playVideosWithSound = (try? c.decode(Bool.self, forKey: .playVideosWithSound)) ?? false
             self.playVideosInFull = (try? c.decode(Bool.self, forKey: .playVideosInFull)) ?? false
+            self.musicSelection = try? c.decode(String.self, forKey: .musicSelection)
+            self.musicVolume = (try? c.decode(Int.self, forKey: .musicVolume)) ?? 60
         }
         
         enum TransitionStyle: String, Codable, CaseIterable {

@@ -17,6 +17,7 @@ struct SlideshowPlayerView: View {
     let onExit: () -> Void
     
     @StateObject private var playerState: SlideshowPlayerState
+    @StateObject private var musicManager = MusicPlaybackManager()
     @State private var isExiting = false
     
     /// Creates a slideshow player view.
@@ -92,6 +93,12 @@ struct SlideshowPlayerView: View {
         .onAppear {
             NSCursor.hide()
             playerState.start()
+            
+            // Start music if selected
+            if let musicSelection = settings.musicSelection {
+                let selection = MusicPlaybackManager.MusicSelection.from(identifier: musicSelection)
+                musicManager.start(selection: selection, volume: settings.musicVolume)
+            }
         }
         .onKeyboardEvent(
             onLeftArrow: { playerState.previousSlide() },
@@ -109,13 +116,16 @@ struct SlideshowPlayerView: View {
         // 1. Stop all timers and animations immediately
         playerState.stop()
         
-        // 2. Show cursor immediately
+        // 2. Fade out music (with fade-out)
+        musicManager.stop(shouldFadeOut: true)
+        
+        // 3. Show cursor immediately
         NSCursor.unhide()
         
-        // 3. Wait for SwiftUI to process the state change and stop rendering
-        //    100ms gives plenty of time for the render loop to settle
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            // 4. Now safe to close the window
+        // 4. Wait for SwiftUI to process the state change and stop rendering
+        //    Allow extra time for music fade-out (0.75s) + buffer (0.25s)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            // 5. Now safe to close the window
             onExit()
         }
     }

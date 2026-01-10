@@ -290,6 +290,8 @@ struct ContentView: View {
         .onChange(of: settings.zoomOnFaces) { session.markDirty() }
         .onChange(of: settings.backgroundColor) { session.markDirty() }
         .onChange(of: settings.slideDuration) { session.markDirty() }
+        .onChange(of: settings.musicSelection) { session.markDirty() }
+        .onChange(of: settings.musicVolume) { session.markDirty() }
         // Delete/Backspace: remove selection (grid)
         .onDeleteCommand {
             slideshowState.removeSelectedPhotos()

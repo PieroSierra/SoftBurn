@@ -6,13 +6,52 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Popover view for global slideshow settings
 struct SettingsPopoverView: View {
     @ObservedObject var settings: SlideshowSettings
     @State private var showColorPicker = false
+    @State private var showMusicFilePicker = false
     
     private let labelWidth: CGFloat = 100
+    
+    /// Music selection options for the dropdown
+    enum MusicSelectionOption: String, CaseIterable, Identifiable {
+        case none = "None"
+        case wintersTale = "winters_tale"
+        case brighterPlans = "brighter_plans"
+        case innovation = "innovation"
+        case custom = "custom"
+        
+        var id: String { rawValue }
+        
+        var displayName: String {
+            switch self {
+            case .none: return "None"
+            case .wintersTale: return "Winter's Tale"
+            case .brighterPlans: return "Brighter Plans"
+            case .innovation: return "Innovation"
+            case .custom: return "Custom…"
+            }
+        }
+    }
+    
+    /// Current music selection option based on settings
+    private var currentMusicOption: MusicSelectionOption {
+        guard let selection = settings.musicSelection else { return .none }
+        
+        if let url = URL(string: selection), url.isFileURL {
+            return .custom
+        }
+        
+        switch selection {
+        case "winters_tale": return .wintersTale
+        case "brighter_plans": return .brighterPlans
+        case "innovation": return .innovation
+        default: return .none
+        }
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -89,6 +128,56 @@ struct SettingsPopoverView: View {
                     .toggleStyle(.checkbox)
             }
             
+            Divider()
+                .padding(.vertical, 4)
+            
+            // Music Selection
+            settingsRow(label: "Music") {
+                Picker("", selection: Binding(
+                    get: { currentMusicOption },
+                    set: { option in
+                        handleMusicSelectionChange(option)
+                    }
+                )) {
+                    ForEach(MusicSelectionOption.allCases) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 150, alignment: .leading)
+            }
+            
+            // Music Volume (enabled only when music is selected)
+            settingsRow(label: "Volume") {
+                HStack(spacing: 8) {
+                    Slider(value: Binding(
+                        get: { Double(settings.musicVolume) },
+                        set: { settings.musicVolume = Int($0) }
+                    ), in: 0...100)
+                        .frame(width: 100)
+                        .disabled(settings.musicSelection == nil)
+                    Text("\(settings.musicVolume)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(settings.musicSelection == nil ? .secondary : .primary)
+                        .frame(width: 30, alignment: .trailing)
+                        .opacity(settings.musicSelection == nil ? 0.5 : 1.0)
+                }
+            }
+            
+            // File picker for custom music (hidden)
+            .fileImporter(
+                isPresented: $showMusicFilePicker,
+                allowedContentTypes: [
+                    UTType(filenameExtension: "mp3") ?? .audio,
+                    UTType(filenameExtension: "m4a") ?? .audio,
+                    UTType(filenameExtension: "aac") ?? .audio,
+                    .audio
+                ],
+                allowsMultipleSelection: false
+            ) { result in
+                handleCustomMusicSelection(result: result)
+            }
+            
 #if DEBUG
             Divider()
                 .padding(.vertical, 4)
@@ -124,6 +213,60 @@ struct SettingsPopoverView: View {
                 settings.slideDuration = (newValue * 2).rounded() / 2
             }
         )
+    }
+    
+    // MARK: - Music Selection Handlers
+    
+    private func handleMusicSelectionChange(_ option: MusicSelectionOption) {
+        switch option {
+        case .none:
+            settings.musicSelection = nil
+            settings.customMusicURL = nil
+        case .wintersTale:
+            settings.musicSelection = "winters_tale"
+            settings.customMusicURL = nil
+        case .brighterPlans:
+            settings.musicSelection = "brighter_plans"
+            settings.customMusicURL = nil
+        case .innovation:
+            settings.musicSelection = "innovation"
+            settings.customMusicURL = nil
+        case .custom:
+            // Show file picker
+            showMusicFilePicker = true
+        }
+    }
+    
+    private func handleCustomMusicSelection(result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            
+            // Start accessing security-scoped resource
+            _ = url.startAccessingSecurityScopedResource()
+            
+            // Verify it's a supported audio format
+            let pathExtension = url.pathExtension.lowercased()
+            let supportedExtensions = ["mp3", "m4a", "aac"]
+            
+            guard supportedExtensions.contains(pathExtension) else {
+                // Reset to None if unsupported format
+                settings.musicSelection = nil
+                settings.customMusicURL = nil
+                return
+            }
+            
+            // Store the file URL as a string identifier
+            settings.musicSelection = url.absoluteString
+            settings.customMusicURL = url
+        case .failure:
+            // On cancel or error, revert to previous selection
+            // If current selection is .custom but file picker was cancelled, reset to None
+            if currentMusicOption == .custom {
+                settings.musicSelection = nil
+                settings.customMusicURL = nil
+            }
+        }
     }
 }
 
