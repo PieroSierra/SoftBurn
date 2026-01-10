@@ -70,6 +70,15 @@ class SlideshowState: ObservableObject {
             AppSessionState.shared.markDirty()
         }
     }
+
+    /// Rotate a single photo 90° counterclockwise (non-destructive metadata only).
+    /// Videos are not rotatable; calls for videos are ignored.
+    func rotatePhotoCounterclockwise(withID id: UUID) {
+        guard let idx = photos.firstIndex(where: { $0.id == id }) else { return }
+        guard photos[idx].kind == .photo else { return }
+        photos[idx].rotateCounterclockwise90()
+        AppSessionState.shared.markDirty()
+    }
     
     /// Toggle selection for a photo
     func toggleSelection(for photoID: UUID) {

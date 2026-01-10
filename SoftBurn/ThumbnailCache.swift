@@ -16,30 +16,37 @@ import ImageIO
 actor ThumbnailCache {
     static let shared = ThumbnailCache()
     
-    private var cache: [URL: NSImage] = [:]
+    private struct Key: Hashable {
+        let url: URL
+        let rotationDegrees: Int
+    }
+
+    private var cache: [Key: NSImage] = [:]
     private let thumbnailSize: CGFloat = 350 // Target size for longest edge
     
     private init() {}
     
     /// Generate or retrieve a thumbnail for a photo URL
-    func thumbnail(for url: URL) async -> NSImage? {
+    func thumbnail(for url: URL, rotationDegrees: Int = 0) async -> NSImage? {
+        let rotation = MediaItem.normalizedRotationDegrees(rotationDegrees)
+        let key = Key(url: url, rotationDegrees: rotation)
         // Check cache first
-        if let cached = cache[url] {
+        if let cached = cache[key] {
             return cached
         }
         
         // Generate thumbnail
-        guard let image = await generateThumbnail(for: url) else {
+        guard let image = await generateThumbnail(for: url, rotationDegrees: rotation) else {
             return nil
         }
         
         // Cache it
-        cache[url] = image
+        cache[key] = image
         return image
     }
     
     /// Generate a thumbnail from a photo URL
-    private func generateThumbnail(for url: URL) async -> NSImage? {
+    private func generateThumbnail(for url: URL, rotationDegrees: Int) async -> NSImage? {
         return await Task.detached {
             // Resolve the URL to ensure it's accessible
             let resolvedURL: URL
@@ -88,6 +95,7 @@ actor ThumbnailCache {
                     }
                 }
                 if let cg {
+                    // Videos are not rotatable; ignore rotationDegrees.
                     if let sdr = Self.renderToSDR(cgImage: cg) {
                         return NSImage(cgImage: sdr, size: NSSize(width: sdr.width, height: sdr.height))
                     }
@@ -109,15 +117,23 @@ actor ThumbnailCache {
                 ] as CFDictionary
                ) {
                 // Force SDR by rendering into an sRGB bitmap context.
-                if let sdr = Self.renderToSDR(cgImage: image) {
-                    return NSImage(cgImage: sdr, size: NSSize(width: sdr.width, height: sdr.height))
-                }
-                return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+                let base = Self.renderToSDR(cgImage: image) ?? image
+
+                // Apply slideshow rotation metadata (after EXIF transform).
+                let rotated = (rotationDegrees == 0) ? base : (Self.rotateCGImage(base, degrees: rotationDegrees) ?? base)
+                return NSImage(cgImage: rotated, size: NSSize(width: rotated.width, height: rotated.height))
             }
             
             // Last-resort fallback: NSImage (may trigger HDR logs on some assets).
             if let fullImage = NSImage(contentsOf: resolvedURL) {
-                return Self.scaleImage(fullImage, toMaxSize: self.thumbnailSize)
+                // This path does not guarantee EXIF-orientation correctness, but is best-effort.
+                let scaled = Self.scaleImage(fullImage, toMaxSize: self.thumbnailSize)
+                if rotationDegrees == 0 { return scaled }
+                guard let cg = scaled.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return scaled }
+                if let rotated = Self.rotateCGImage(cg, degrees: rotationDegrees) {
+                    return NSImage(cgImage: rotated, size: NSSize(width: rotated.width, height: rotated.height))
+                }
+                return scaled
             }
             
             return nil
@@ -172,6 +188,40 @@ actor ThumbnailCache {
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
         return ctx.makeImage()
     }
+
+    /// Rotate a CGImage around its center by a multiple of 90 degrees (counterclockwise).
+    private static func rotateCGImage(_ cgImage: CGImage, degrees: Int) -> CGImage? {
+        let d = MediaItem.normalizedRotationDegrees(degrees)
+        guard d != 0 else { return cgImage }
+
+        let w = cgImage.width
+        let h = cgImage.height
+        guard w > 0, h > 0 else { return nil }
+
+        let outSize: CGSize = (d == 90 || d == 270) ? CGSize(width: h, height: w) : CGSize(width: w, height: h)
+
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.union(CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue))
+        guard let ctx = CGContext(
+            data: nil,
+            width: Int(outSize.width),
+            height: Int(outSize.height),
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else { return nil }
+
+        ctx.interpolationQuality = .high
+
+        // Move origin to center, rotate, then draw centered.
+        ctx.translateBy(x: outSize.width / 2.0, y: outSize.height / 2.0)
+        ctx.rotate(by: CGFloat(Double(d) * Double.pi / 180.0))
+        ctx.translateBy(x: -CGFloat(w) / 2.0, y: -CGFloat(h) / 2.0)
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        return ctx.makeImage()
+    }
     
     /// Clear the cache (useful for memory management)
     func clearCache() {
@@ -180,8 +230,9 @@ actor ThumbnailCache {
     
     /// Remove specific entries from cache
     func removeCache(for urls: [URL]) {
+        // Remove all rotation variants for these URLs.
         for url in urls {
-            cache.removeValue(forKey: url)
+            cache = cache.filter { $0.key.url != url }
         }
     }
 }

@@ -38,7 +38,7 @@ struct SlideshowDocument: Codable {
     static let fileExtension = "softburn"
     
     /// Current document format version
-    static let currentVersion = 4
+    static let currentVersion = 5
     
     // MARK: - Nested Types
     
@@ -110,6 +110,22 @@ struct SlideshowDocument: Codable {
     struct MediaEntry: Codable, Hashable {
         var kind: MediaItem.Kind
         var path: String
+        /// Non-destructive rotation metadata (degrees counterclockwise).
+        /// Allowed values: 0, 90, 180, 270.
+        var rotationDegrees: Int
+
+        init(kind: MediaItem.Kind, path: String, rotationDegrees: Int = 0) {
+            self.kind = kind
+            self.path = path
+            self.rotationDegrees = MediaItem.normalizedRotationDegrees(rotationDegrees)
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.kind = try c.decode(MediaItem.Kind.self, forKey: .kind)
+            self.path = try c.decode(String.self, forKey: .path)
+            self.rotationDegrees = MediaItem.normalizedRotationDegrees((try? c.decode(Int.self, forKey: .rotationDegrees)) ?? 0)
+        }
     }
 
     /// Codable representation of a normalized CGRect (Vision-style).
@@ -144,7 +160,7 @@ struct SlideshowDocument: Codable {
         self.version = Self.currentVersion
         self.metadata = Metadata(title: title)
         self.photoPaths = photos.filter { $0.kind == .photo }.map { $0.url.path } // legacy compatibility
-        self.mediaItems = photos.map { MediaEntry(kind: $0.kind, path: $0.url.path) }
+        self.mediaItems = photos.map { MediaEntry(kind: $0.kind, path: $0.url.path, rotationDegrees: $0.rotationDegrees) }
         self.bookmarksByPath = nil
         self.faceRectsByPath = nil
         self.settings = Settings()
@@ -219,10 +235,11 @@ struct SlideshowDocument: Codable {
             switch entry.kind {
             case .photo:
                 guard MediaItem.isImageFile(url) else { continue }
-                items.append(MediaItem(url: url, kind: .photo))
+                items.append(MediaItem(url: url, kind: .photo, rotationDegrees: entry.rotationDegrees))
             case .video:
                 guard MediaItem.isVideoFile(url) else { continue }
-                items.append(MediaItem(url: url, kind: .video))
+                // Videos are not rotatable; ignore any persisted rotation.
+                items.append(MediaItem(url: url, kind: .video, rotationDegrees: 0))
             }
         }
 

@@ -80,6 +80,9 @@ struct ThumbnailView: View {
         .task {
             await loadThumbnail()
         }
+        .onChange(of: photo.rotationDegrees) { _, _ in
+            Task { await loadThumbnail() }
+        }
     }
     
     /// The current thumbnail image (exposed for drag preview)
@@ -96,7 +99,7 @@ struct ThumbnailView: View {
             return
         }
         
-        thumbnail = await ThumbnailCache.shared.thumbnail(for: photo.url)
+        thumbnail = await ThumbnailCache.shared.thumbnail(for: photo.url, rotationDegrees: photo.rotationDegrees)
 
         if photo.kind == .video {
             videoDurationText = await VideoMetadataCache.shared.durationString(for: photo.url)

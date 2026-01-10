@@ -145,6 +145,7 @@ class SlideshowPlayerState: ObservableObject {
     @Published var currentHoldDuration: Double = 5.0
 
     /// Vision face boxes (normalized rects, origin bottom-left).
+    /// These are rotated into the slideshow's rotation metadata space for consistency with rendering.
     @Published var currentFaceBoxes: [CGRect] = []
     @Published var nextFaceBoxes: [CGRect] = []
 
@@ -309,8 +310,8 @@ class SlideshowPlayerState: ObservableObject {
         case .photo:
             currentVideoPlayer?.pause()
             currentVideoPlayer = nil
-            let preloadURL = (nextItem.kind == .photo) ? nextItem.url : nil
-            if let image = await imageLoader.setCurrent(currentItem.url, preloadNext: preloadURL) {
+            let preload: (url: URL, rotationDegrees: Int)? = (nextItem.kind == .photo) ? (nextItem.url, nextItem.rotationDegrees) : nil
+            if let image = await imageLoader.setCurrent(currentItem.url, rotationDegrees: currentItem.rotationDegrees, preloadNext: preload) {
                 guard !isStopped else { return }
                 currentImage = image
             } else {
@@ -318,8 +319,10 @@ class SlideshowPlayerState: ObservableObject {
             }
 
             let faces = await FaceDetectionCache.shared.cachedFaces(for: currentItem.url) ?? []
-            currentFaceBoxes = faces
-            currentEndOffset = Self.faceTargetOffset(from: faces)
+            // Rotate faces in Vision space to match the rotated bitmap we render.
+            let rotatedFaces = Self.rotateVisionRects(faces, degrees: currentItem.rotationDegrees)
+            currentFaceBoxes = rotatedFaces
+            currentEndOffset = Self.faceTargetOffset(from: rotatedFaces)
         case .video:
             currentImage = nil
             currentVideoPlayer = makePlayer(url: currentItem.url, shouldAutoPlay: true)
@@ -331,11 +334,12 @@ class SlideshowPlayerState: ObservableObject {
         case .photo:
             nextVideoPlayer?.pause()
             nextVideoPlayer = nil
-            nextImage = await imageLoader.loadImage(for: nextItem.url)
+            nextImage = await imageLoader.loadImage(for: nextItem.url, rotationDegrees: nextItem.rotationDegrees)
 
             let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem.url) ?? []
-            nextFaceBoxes = faces
-            nextEndOffset = Self.faceTargetOffset(from: faces)
+            let rotatedFaces = Self.rotateVisionRects(faces, degrees: nextItem.rotationDegrees)
+            nextFaceBoxes = rotatedFaces
+            nextEndOffset = Self.faceTargetOffset(from: rotatedFaces)
         case .video:
             nextImage = nil
             nextVideoPlayer = makePlayer(url: nextItem.url, shouldAutoPlay: false)
@@ -425,11 +429,12 @@ class SlideshowPlayerState: ObservableObject {
         case .photo:
             nextVideoPlayer?.pause()
             nextVideoPlayer = nil
-            nextImage = await imageLoader.loadImage(for: nextItem.url)
+            nextImage = await imageLoader.loadImage(for: nextItem.url, rotationDegrees: nextItem.rotationDegrees)
 
             let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem.url) ?? []
-            nextFaceBoxes = faces
-            nextEndOffset = Self.faceTargetOffset(from: faces)
+            let rotatedFaces = Self.rotateVisionRects(faces, degrees: nextItem.rotationDegrees)
+            nextFaceBoxes = rotatedFaces
+            nextEndOffset = Self.faceTargetOffset(from: rotatedFaces)
         case .video:
             nextImage = nil
             nextFaceBoxes = []
@@ -519,22 +524,53 @@ class SlideshowPlayerState: ObservableObject {
 
     // MARK: - Face targeting
 
+    /// Rotate Vision-style normalized rects (origin bottom-left) by multiples of 90 degrees counterclockwise.
+    private static func rotateVisionRects(_ rects: [CGRect], degrees: Int) -> [CGRect] {
+        let d = MediaItem.normalizedRotationDegrees(degrees)
+        guard d != 0 else { return rects }
+
+        func rotatePoint(_ p: CGPoint) -> CGPoint {
+            switch d {
+            case 90:
+                // (x, y) -> (1 - y, x)
+                return CGPoint(x: 1.0 - p.y, y: p.x)
+            case 180:
+                return CGPoint(x: 1.0 - p.x, y: 1.0 - p.y)
+            case 270:
+                return CGPoint(x: p.y, y: 1.0 - p.x)
+            default:
+                return p
+            }
+        }
+
+        return rects.map { r in
+            let p1 = rotatePoint(CGPoint(x: r.minX, y: r.minY))
+            let p2 = rotatePoint(CGPoint(x: r.maxX, y: r.minY))
+            let p3 = rotatePoint(CGPoint(x: r.maxX, y: r.maxY))
+            let p4 = rotatePoint(CGPoint(x: r.minX, y: r.maxY))
+            let xs = [p1.x, p2.x, p3.x, p4.x]
+            let ys = [p1.y, p2.y, p3.y, p4.y]
+            let minX = xs.min() ?? 0
+            let maxX = xs.max() ?? 0
+            let minY = ys.min() ?? 0
+            let maxY = ys.max() ?? 0
+            return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        }
+    }
+
     private static func faceTargetOffset(from faces: [CGRect]) -> CGSize {
         guard let face = faces.randomElement() else {
             return .zero
         }
 
-        // Vision boundingBox is normalized, origin bottom-left.
-        let centerX = face.midX
-        let centerY = face.midY
-
-        // Convert face center to a translation that moves the IMAGE such that the face moves toward the VIEW center.
-        // - If the face is to the right (centerX > 0.5), we must shift the image left (negative), and vice-versa.
-        // - Vision's Y is bottom-left; SwiftUI's Y is top-left, so the sign for Y differs from naive subtraction.
-        //
+        // Translation to move the IMAGE such that the face moves toward the VIEW center.
         // Result is a normalized offset where (0,0) means centered, +y means down (SwiftUI).
-        var x = 0.5 - centerX
-        var y = centerY - 0.5
+        //
+        // Our face boxes are Vision-style (origin bottom-left). Convert to the same "offset" convention used elsewhere:
+        // - If the face is to the right (x > 0.5), shift the image left (negative), and vice-versa.
+        // - Vision's Y is bottom-left; SwiftUI's Y is top-left, so the sign differs.
+        var x = 0.5 - face.midX
+        var y = face.midY - 0.5
 
         // Clamp to a safe range so we don't pan too far.
         let clamp: Double = 0.25

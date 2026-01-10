@@ -97,7 +97,7 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 600)
         .toolbar {
             if #available(macOS 26.0, *) {
-                // Leading controls
+                // Leading controls - disabled when viewer is open
                 ToolbarItemGroup(placement: .navigation) {
                     Button(action: {
                         importMode = .photos
@@ -106,6 +106,7 @@ struct ContentView: View {
                         Label("Add Media", systemImage: "plus")
                     }
                     .help("Add media")
+                    .disabled(isShowingViewer)
 
                     Button(action: {
                         importMode = .slideshow
@@ -114,6 +115,7 @@ struct ContentView: View {
                         Label("Open", systemImage: "folder")
                     }
                     .help("Open slideshow")
+                    .disabled(isShowingViewer)
 
                     Button(action: {
                         beginSave()
@@ -121,7 +123,7 @@ struct ContentView: View {
                         Label("Save", systemImage: "square.and.arrow.down")
                     }
                     .help("Save")
-                    .disabled(slideshowState.isEmpty)
+                    .disabled(slideshowState.isEmpty || isShowingViewer)
                 }
 
                 // Center status
@@ -130,10 +132,11 @@ struct ContentView: View {
                         Text(photoCountText)
                             .font(.system(size: 13))
                             .foregroundColor(.secondary)
+                            .opacity(isShowingViewer ? 0.4 : 1.0) // Dim when viewer is open
                     }
                 }
 
-                // Trailing controls
+                // Trailing controls - disabled when viewer is open
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button(action: {
                         slideshowState.removeSelectedPhotos()
@@ -141,7 +144,7 @@ struct ContentView: View {
                         Image(systemName: "trash")
                     }
                     .help("Remove from slideshow")
-                    .disabled(!slideshowState.hasSelection)
+                    .disabled(!slideshowState.hasSelection || isShowingViewer)
 
                     Button(action: {
                         showSettings.toggle()
@@ -149,6 +152,7 @@ struct ContentView: View {
                         Image(systemName: "gearshape")
                     }
                     .help("Slideshow settings")
+                    .disabled(isShowingViewer)
                     .popover(isPresented: $showSettings, arrowEdge: .bottom) {
                         // On macOS 26 the system popover adopts the new glass styling automatically.
                         // Do not wrap in custom backgrounds or clip shapes.
@@ -159,10 +163,10 @@ struct ContentView: View {
                         startSlideshow()
                     }) {
                         Label("Play", systemImage: "play.fill")
-                            .foregroundStyle(slideshowState.isEmpty ? Color.secondary : Color.blue)
+                            .foregroundStyle((slideshowState.isEmpty || isShowingViewer) ? Color.secondary : Color.blue)
                     }
                     .help("Play slideshow")
-                    .disabled(slideshowState.isEmpty)
+                    .disabled(slideshowState.isEmpty || isShowingViewer)
                 }
             }
         }
@@ -435,7 +439,7 @@ struct ContentView: View {
     
     private var toolbar: some View {
         HStack {
-            // Left side buttons
+            // Left side buttons - disabled when viewer is open
             HStack(spacing: 12) {
                 Button(action: {
                     importMode = .photos
@@ -446,6 +450,7 @@ struct ContentView: View {
                     Text("Add Media")
                 }
                 .help("Add media")
+                .disabled(isShowingViewer)
                 
                 
                 Button(action: {
@@ -457,6 +462,7 @@ struct ContentView: View {
                     Text("Open")
                 }
                 .help("Open slideshow")
+                .disabled(isShowingViewer)
 
                 Button(action: {
                     beginSave()
@@ -466,7 +472,7 @@ struct ContentView: View {
                     Text("Save")
                 }
                 .help("Save")
-                .disabled(slideshowState.isEmpty)
+                .disabled(slideshowState.isEmpty || isShowingViewer)
 
             }
             
@@ -477,30 +483,30 @@ struct ContentView: View {
                 Text(photoCountText)
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
+                    .opacity(isShowingViewer ? 0.4 : 1.0) // Dim when viewer is open
             }
             
             Spacer()
             
-            // Right side buttons
+            // Right side buttons - disabled when viewer is open
             HStack(spacing: 12) {
                 Button(action: {
                     slideshowState.removeSelectedPhotos()
                 }) {
                     Image(systemName: "trash")
                         .frame(width: 20, height: 20)
-                    //Text("Remove photo")
                 }
                 .help("Remove from slideshow")
-                .disabled(!slideshowState.hasSelection)
+                .disabled(!slideshowState.hasSelection || isShowingViewer)
                 
                 Button(action: {
                     showSettings.toggle()
                 }) {
                     Image(systemName: "gearshape")
                         .frame(width: 20, height: 20)
-                   // Text("Settings")
                 }
                 .help("Slideshow settings")
+                .disabled(isShowingViewer)
                 .popover(isPresented: $showSettings, arrowEdge: .bottom) {
                     SettingsPopoverView(settings: settings)
                 }
@@ -510,11 +516,11 @@ struct ContentView: View {
                 }) {
                     Image(systemName: "play.fill")
                         .frame(width: 20, height: 20)
-                        .foregroundStyle(slideshowState.isEmpty ? Color.secondary : Color.blue)
+                        .foregroundStyle((slideshowState.isEmpty || isShowingViewer) ? Color.secondary : Color.blue)
                     Text("Play")
                 }
                 .help("Play slideshow")
-                .disabled(slideshowState.isEmpty)
+                .disabled(slideshowState.isEmpty || isShowingViewer)
             }
         }
         .padding(.horizontal, 16)

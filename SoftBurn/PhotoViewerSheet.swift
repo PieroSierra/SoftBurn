@@ -61,11 +61,11 @@ struct PhotoViewerSheet: View {
     }
 
     @ViewBuilder
-    private func hudButton(systemName: String, action: @escaping () -> Void) -> some View {
+    private func hudButton(systemName: String, foregroundColor: Color = Color.white.opacity(0.9), action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundColor(foregroundColor)
                 .frame(width: 34, height: 28)
         }
         .buttonStyle(.plain)
@@ -116,10 +116,17 @@ struct PhotoViewerSheet: View {
                 hudButton(systemName: "trash") { removeCurrentPhoto() }
                     .help("Remove from slideshow (does not delete files)")
                     .disabled(slideshowState.photos.isEmpty)
-                
-                hudButton(systemName: "play.fill") { playFromCurrentPhoto() }
-                    .help("Play slideshow from this photo")
-                    .disabled(slideshowState.photos.isEmpty)
+
+                hudButton(systemName: "rotate.left") { rotateCurrentPhoto() }
+                    .help("Rotate counterclockwise")
+                    .disabled(currentItem?.kind != .photo)
+
+                hudButton(
+                    systemName: "play.fill",
+                    foregroundColor: (slideshowState.photos.isEmpty ? Color.secondary : Color.blue)
+                ) { playFromCurrentPhoto() }
+                .help("Play slideshow from this photo")
+                .disabled(slideshowState.photos.isEmpty)
             }
                 .padding(12)
         }
@@ -230,6 +237,13 @@ struct PhotoViewerSheet: View {
         }
     }
 
+    private func rotateCurrentPhoto() {
+        guard let item = currentItem, item.kind == .photo else { return }
+        slideshowState.rotatePhotoCounterclockwise(withID: item.id)
+        resetTransform()
+        Task { await loadCurrentMedia() }
+    }
+
     private var currentItem: MediaItem? {
         guard currentIndex >= 0, currentIndex < slideshowState.photos.count else { return nil }
         return slideshowState.photos[currentIndex]
@@ -260,7 +274,7 @@ struct PhotoViewerSheet: View {
         case .photo:
             let loaded = await loader.load(url: item.url)
             await MainActor.run {
-                self.image = loaded
+                self.image = Self.applyRotationForPreview(loaded, degrees: item.rotationDegrees)
                 self.isLoading = false
             }
         case .video:
@@ -364,6 +378,52 @@ struct PhotoViewerSheet: View {
             NotificationCenter.default.removeObserver(endObserver)
             self.endObserver = nil
         }
+    }
+
+    // MARK: - Rotation (Preview)
+
+    /// For preview, rotate the bitmap itself so layout sizing (portrait/landscape) updates correctly.
+    /// This is non-destructive and never writes to disk.
+    private static func applyRotationForPreview(_ image: NSImage?, degrees: Int) -> NSImage? {
+        guard let image else { return nil }
+        let d = MediaItem.normalizedRotationDegrees(degrees)
+        guard d != 0 else { return image }
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
+        guard let rotated = rotateCGImage(cg, degrees: d) else { return image }
+        return NSImage(cgImage: rotated, size: NSSize(width: rotated.width, height: rotated.height))
+    }
+
+    /// Rotate a CGImage around its center by a multiple of 90 degrees (counterclockwise).
+    private static func rotateCGImage(_ cgImage: CGImage, degrees: Int) -> CGImage? {
+        let d = MediaItem.normalizedRotationDegrees(degrees)
+        guard d != 0 else { return cgImage }
+
+        let w = cgImage.width
+        let h = cgImage.height
+        guard w > 0, h > 0 else { return nil }
+
+        let outSize: CGSize = (d == 90 || d == 270) ? CGSize(width: h, height: w) : CGSize(width: w, height: h)
+
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.union(CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue))
+        guard let ctx = CGContext(
+            data: nil,
+            width: Int(outSize.width),
+            height: Int(outSize.height),
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else { return nil }
+
+        ctx.interpolationQuality = .high
+
+        ctx.translateBy(x: outSize.width / 2.0, y: outSize.height / 2.0)
+        ctx.rotate(by: CGFloat(Double(d) * Double.pi / 180.0))
+        ctx.translateBy(x: -CGFloat(w) / 2.0, y: -CGFloat(h) / 2.0)
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        return ctx.makeImage()
     }
 }
 

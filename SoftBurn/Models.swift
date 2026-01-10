@@ -18,11 +18,15 @@ struct MediaItem: Identifiable, Hashable, Codable, Sendable {
     let id: UUID
     let url: URL
     let kind: Kind
+    /// Non-destructive rotation metadata (degrees counterclockwise).
+    /// Allowed values: 0, 90, 180, 270.
+    var rotationDegrees: Int
 
-    init(url: URL, kind: Kind) {
+    init(url: URL, kind: Kind, rotationDegrees: Int = 0) {
         self.id = UUID()
         self.url = url
         self.kind = kind
+        self.rotationDegrees = MediaItem.normalizedRotationDegrees(rotationDegrees)
     }
 
     /// File name for display
@@ -46,6 +50,27 @@ extension MediaItem {
     nonisolated static func isVideoFile(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         return supportedVideoExtensions.contains(ext)
+    }
+
+    /// Normalize to one of {0, 90, 180, 270}.
+    nonisolated static func normalizedRotationDegrees(_ degrees: Int) -> Int {
+        // Wrap into [0, 360)
+        var d = degrees % 360
+        if d < 0 { d += 360 }
+        // Snap to allowed values (defensive; rotation is always applied in 90° steps).
+        switch d {
+        case 0, 90, 180, 270:
+            return d
+        default:
+            // Round to nearest 90
+            let rounded = Int((Double(d) / 90.0).rounded()) * 90
+            return normalizedRotationDegrees(rounded)
+        }
+    }
+
+    mutating func rotateCounterclockwise90() {
+        guard kind == .photo else { return }
+        rotationDegrees = MediaItem.normalizedRotationDegrees(rotationDegrees + 90)
     }
 }
 

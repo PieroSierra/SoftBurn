@@ -97,6 +97,7 @@ struct MediaGridCollectionView: NSViewRepresentable {
         private var didPushSelectionToSwiftUI = false
         private var currentlyDraggingIDs: [UUID] = []
         private var lastAppliedIDs: [UUID] = []
+        private var lastAppliedContentKeys: [UInt64] = []
 
         // Drag placeholder (visual gap) support
         private let dropPlaceholderID = UUID()
@@ -140,10 +141,25 @@ struct MediaGridCollectionView: NSViewRepresentable {
 
         func apply(photos: [MediaItem], to collectionView: MediaCollectionView, animatingDifferences: Bool = true) {
             let ids = photos.map(\.id)
-            if ids == lastAppliedIDs {
+            // Content key: if IDs are the same but per-item metadata changes (e.g. rotation),
+            // we must still refresh visible cells so thumbnails update immediately.
+            let contentKeys: [UInt64] = photos.map { item in
+                var hasher = Hasher()
+                hasher.combine(item.id)
+                hasher.combine(item.url.path)
+                hasher.combine(item.kind.rawValue)
+                hasher.combine(item.rotationDegrees)
+                return UInt64(bitPattern: Int64(hasher.finalize()))
+            }
+
+            let idsUnchanged = (ids == lastAppliedIDs)
+            let contentUnchanged = (contentKeys == lastAppliedContentKeys)
+            lastAppliedIDs = ids
+            lastAppliedContentKeys = contentKeys
+
+            if idsUnchanged, contentUnchanged {
                 return
             }
-            lastAppliedIDs = ids
 
             currentPhotos = photos
             itemByID = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) })
@@ -152,6 +168,10 @@ struct MediaGridCollectionView: NSViewRepresentable {
             var snapshot = NSDiffableDataSourceSnapshot<Int, UUID>()
             snapshot.appendSections([0])
             snapshot.appendItems(photos.map(\.id), toSection: 0)
+            if idsUnchanged, !contentUnchanged {
+                // Force NSCollectionViewItem reconfiguration for metadata-only updates.
+                snapshot.reloadItems(ids)
+            }
 
             dataSource?.apply(snapshot, animatingDifferences: animatingDifferences)
         }
@@ -1063,8 +1083,9 @@ final class MediaThumbnailCellView: NSView {
 
         let url = media.url
         let id = media.id
+        let rotation = (media.kind == .photo) ? media.rotationDegrees : 0
         thumbnailTask = Task {
-            let thumb = await ThumbnailCache.shared.thumbnail(for: url)
+            let thumb = await ThumbnailCache.shared.thumbnail(for: url, rotationDegrees: rotation)
             await MainActor.run { [weak self] in
                 guard let self, self.currentID == id else { return }
                 self.progress.stopAnimation(nil)
