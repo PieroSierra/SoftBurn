@@ -118,19 +118,6 @@ struct SettingsPopoverView: View {
             Divider()
                 .padding(.vertical, 4)
             
-            settingsRow(label: "Videos") {
-                Toggle("Play with sound", isOn: $settings.playVideosWithSound)
-                    .toggleStyle(.checkbox)
-            }
-            
-            settingsRow(label: "") {
-                Toggle("Play in full", isOn: $settings.playVideosInFull)
-                    .toggleStyle(.checkbox)
-            }
-            
-            Divider()
-                .padding(.vertical, 4)
-            
             // Music Selection
             settingsRow(label: "Music") {
                 Picker("", selection: Binding(
@@ -154,14 +141,24 @@ struct SettingsPopoverView: View {
                         get: { Double(settings.musicVolume) },
                         set: { settings.musicVolume = Int($0) }
                     ), in: 0...100)
-                        .frame(width: 100)
-                        .disabled(settings.musicSelection == nil)
+                    .frame(width: 100)
+                    .disabled(settings.musicSelection == nil)
                     Text("\(settings.musicVolume)")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(settings.musicSelection == nil ? .secondary : .primary)
                         .frame(width: 30, alignment: .trailing)
                         .opacity(settings.musicSelection == nil ? 0.5 : 1.0)
                 }
+            }
+            
+            settingsRow(label: "Videos") {
+                Toggle("Play with sound", isOn: $settings.playVideosWithSound)
+                    .toggleStyle(.checkbox)
+            }
+            
+            settingsRow(label: "") {
+                Toggle("Play in full", isOn: $settings.playVideosInFull)
+                    .toggleStyle(.checkbox)
             }
             
             // File picker for custom music (hidden)
