@@ -184,6 +184,26 @@ struct SettingsPopoverView: View {
                     .toggleStyle(.checkbox)
             }
 #endif
+            
+            Divider()
+                .padding(.vertical, 4)
+            
+            // Tip Jar Button
+            Button(action: {
+                AboutWindowController.shared.show()
+            }) {
+                HStack(spacing: 6) {
+                    Image("coffee_medium")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                    Text("Like this app?")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .center)
    
         }
         .padding(16)
