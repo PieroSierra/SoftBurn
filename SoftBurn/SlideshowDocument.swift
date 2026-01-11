@@ -66,6 +66,8 @@ struct SlideshowDocument: Codable {
         var musicSelection: String?
         /// Music volume (0-100), default 60
         var musicVolume: Int
+        /// Post-processing effect applied during playback
+        var effect: PostProcessingEffect
         
         init() {
             self.shuffle = false
@@ -77,6 +79,7 @@ struct SlideshowDocument: Codable {
             self.playVideosInFull = false
             self.musicSelection = nil
             self.musicVolume = 60
+            self.effect = .none
         }
 
         init(from decoder: Decoder) throws {
@@ -90,6 +93,24 @@ struct SlideshowDocument: Codable {
             self.playVideosInFull = (try? c.decode(Bool.self, forKey: .playVideosInFull)) ?? false
             self.musicSelection = try? c.decode(String.self, forKey: .musicSelection)
             self.musicVolume = (try? c.decode(Int.self, forKey: .musicVolume)) ?? 60
+            self.effect = (try? c.decode(PostProcessingEffect.self, forKey: .effect)) ?? .none
+        }
+        
+        /// Post-processing effects for playback rendering
+        enum PostProcessingEffect: String, Codable, CaseIterable {
+            case none
+            case monochrome
+            case silvertone
+            case sepia
+            
+            var displayName: String {
+                switch self {
+                case .none: return "None"
+                case .monochrome: return "Monochrome"
+                case .silvertone: return "Silvertone"
+                case .sepia: return "Sepia"
+                }
+            }
         }
         
         enum TransitionStyle: String, Codable, CaseIterable {

@@ -22,6 +22,7 @@ class SlideshowSettings: ObservableObject {
     @AppStorage("settings.slideDuration") private var storedSlideDuration: Double = 5.0
     @AppStorage("settings.playVideosWithSound") private var storedPlayVideosWithSound: Bool = false
     @AppStorage("settings.playVideosInFull") private var storedPlayVideosInFull: Bool = false
+    @AppStorage("settings.effect") private var storedEffect: String = "none"
     
 #if DEBUG
     @AppStorage("settings.debugShowFaces") private var storedDebugShowFaces: Bool = false
@@ -55,6 +56,10 @@ class SlideshowSettings: ObservableObject {
     
     @Published var playVideosInFull: Bool = false {
         didSet { storedPlayVideosInFull = playVideosInFull }
+    }
+    
+    @Published var effect: SlideshowDocument.Settings.PostProcessingEffect = .none {
+        didSet { storedEffect = effect.rawValue }
     }
     
     /// Music selection (per-document, not persisted to UserDefaults)
@@ -91,6 +96,7 @@ class SlideshowSettings: ObservableObject {
         slideDuration = storedSlideDuration
         playVideosWithSound = storedPlayVideosWithSound
         playVideosInFull = storedPlayVideosInFull
+        effect = SlideshowDocument.Settings.PostProcessingEffect(rawValue: storedEffect) ?? .none
 #if DEBUG
         debugShowFaces = storedDebugShowFaces
 #endif
@@ -110,6 +116,7 @@ class SlideshowSettings: ObservableObject {
         settings.playVideosInFull = playVideosInFull
         settings.musicSelection = musicSelection
         settings.musicVolume = musicVolume
+        settings.effect = effect
         return settings
     }
     
@@ -124,6 +131,7 @@ class SlideshowSettings: ObservableObject {
         playVideosInFull = settings.playVideosInFull
         musicSelection = settings.musicSelection
         musicVolume = settings.musicVolume
+        effect = settings.effect
         
         // Restore custom music URL if it's a custom selection
         if let selection = settings.musicSelection,

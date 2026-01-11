@@ -114,6 +114,16 @@ struct SettingsPopoverView: View {
                 }
             }
             
+            // Post-Processing Effects
+            settingsRow(label: "Effects") {
+                Picker("", selection: $settings.effect) {
+                    ForEach(SlideshowDocument.Settings.PostProcessingEffect.allCases, id: \.self) { effect in
+                        Text(effect.displayName).tag(effect)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 150, alignment: .leading)
+            }
             
             Divider()
                 .padding(.vertical, 4)
