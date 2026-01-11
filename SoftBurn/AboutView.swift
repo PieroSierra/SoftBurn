@@ -89,6 +89,7 @@ struct AboutView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 20)
         }
+        .frame(width: 640, height: 400)
         .alert("Thank you!", isPresented: $showThankYouAlert) {
             Button("OK", role: .cancel) { }
         } message: {
