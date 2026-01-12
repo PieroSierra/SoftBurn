@@ -68,23 +68,33 @@ struct SlideshowPlayerView: View {
             
             // Only render content if not exiting
             if !isExiting {
-                // Slide content based on transition style
-                // Post-processing effect is applied to media content only (not background)
-                Group {
-                    switch settings.transitionStyle {
-                    case .plain:
-                        PlainTransitionView(playerState: playerState)
-                    case .crossFade:
-                        CrossFadeTransitionView(playerState: playerState)
-                    case .panAndZoom, .zoom:
-                        PanAndZoomTransitionView(
-                            playerState: playerState,
-                            zoomOnFaces: settings.zoomOnFaces,
-                            debugShowFaces: settings.debugShowFaces
-                        )
+                if settings.patina == .none {
+                    // SwiftUI path (no Metal): media + transforms + optional Effects
+                    Group {
+                        switch settings.transitionStyle {
+                        case .plain:
+                            PlainTransitionView(playerState: playerState)
+                        case .crossFade:
+                            CrossFadeTransitionView(playerState: playerState)
+                        case .panAndZoom, .zoom:
+                            PanAndZoomTransitionView(
+                                playerState: playerState,
+                                zoomOnFaces: settings.zoomOnFaces,
+                                debugShowFaces: settings.debugShowFaces
+                            )
+                        }
                     }
+                    // Effects apply to media content only (not background)
+                    .postProcessingEffect(settings.effect)
+                } else {
+                    // Metal path: media + geometry + effects composited into texture,
+                    // then Patina post-pass, then present.
+                    MetalSlideshowView(
+                        playerState: playerState,
+                        settings: settings
+                    )
+                    .allowsHitTesting(false)
                 }
-                .postProcessingEffect(settings.effect)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

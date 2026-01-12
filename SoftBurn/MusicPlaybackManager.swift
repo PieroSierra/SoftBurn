@@ -287,7 +287,7 @@ class MusicPlaybackManager: ObservableObject {
     // MARK: - Looping
     
     private func installLoopObserver() {
-        guard let item = playerItem, let player = player else { return }
+        guard let item = playerItem, let _ = player else { return }
         
         removeLoopObserver()
         

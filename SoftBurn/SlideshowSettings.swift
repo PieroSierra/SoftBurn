@@ -23,6 +23,7 @@ class SlideshowSettings: ObservableObject {
     @AppStorage("settings.playVideosWithSound") private var storedPlayVideosWithSound: Bool = false
     @AppStorage("settings.playVideosInFull") private var storedPlayVideosInFull: Bool = false
     @AppStorage("settings.effect") private var storedEffect: String = "none"
+    @AppStorage("settings.patina") private var storedPatina: String = "none"
     
 #if DEBUG
     @AppStorage("settings.debugShowFaces") private var storedDebugShowFaces: Bool = false
@@ -62,6 +63,10 @@ class SlideshowSettings: ObservableObject {
         didSet { storedEffect = effect.rawValue }
     }
     
+    @Published var patina: SlideshowDocument.Settings.PatinaEffect = .none {
+        didSet { storedPatina = patina.rawValue }
+    }
+    
     /// Music selection (per-document, not persisted to UserDefaults)
     @Published var musicSelection: String? = nil
     
@@ -97,6 +102,7 @@ class SlideshowSettings: ObservableObject {
         playVideosWithSound = storedPlayVideosWithSound
         playVideosInFull = storedPlayVideosInFull
         effect = SlideshowDocument.Settings.PostProcessingEffect(rawValue: storedEffect) ?? .none
+        patina = SlideshowDocument.Settings.PatinaEffect(rawValue: storedPatina) ?? .none
 #if DEBUG
         debugShowFaces = storedDebugShowFaces
 #endif
@@ -117,6 +123,7 @@ class SlideshowSettings: ObservableObject {
         settings.musicSelection = musicSelection
         settings.musicVolume = musicVolume
         settings.effect = effect
+        settings.patina = patina
         return settings
     }
     
@@ -132,6 +139,7 @@ class SlideshowSettings: ObservableObject {
         musicSelection = settings.musicSelection
         musicVolume = settings.musicVolume
         effect = settings.effect
+        patina = settings.patina
         
         // Restore custom music URL if it's a custom selection
         if let selection = settings.musicSelection,

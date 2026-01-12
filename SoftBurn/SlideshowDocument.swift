@@ -68,6 +68,8 @@ struct SlideshowDocument: Codable {
         var musicVolume: Int
         /// Post-processing effect applied during playback
         var effect: PostProcessingEffect
+        /// Patina effect (Metal-based film/analog simulation)
+        var patina: PatinaEffect
         
         init() {
             self.shuffle = false
@@ -80,6 +82,7 @@ struct SlideshowDocument: Codable {
             self.musicSelection = nil
             self.musicVolume = 60
             self.effect = .none
+            self.patina = .none
         }
 
         init(from decoder: Decoder) throws {
@@ -94,6 +97,7 @@ struct SlideshowDocument: Codable {
             self.musicSelection = try? c.decode(String.self, forKey: .musicSelection)
             self.musicVolume = (try? c.decode(Int.self, forKey: .musicVolume)) ?? 60
             self.effect = (try? c.decode(PostProcessingEffect.self, forKey: .effect)) ?? .none
+            self.patina = (try? c.decode(PatinaEffect.self, forKey: .patina)) ?? .none
         }
         
         /// Post-processing effects for playback rendering
@@ -109,6 +113,23 @@ struct SlideshowDocument: Codable {
                 case .monochrome: return "Monochrome"
                 case .silvertone: return "Silvertone"
                 case .sepia: return "Sepia"
+                }
+            }
+        }
+        
+        /// Patina effects for film/analog simulation (Metal-based)
+        enum PatinaEffect: String, Codable, CaseIterable {
+            case none
+            case mm35
+            case agedFilm
+            case vhs
+            
+            var displayName: String {
+                switch self {
+                case .none: return "None"
+                case .mm35: return "35mm"
+                case .agedFilm: return "Aged Film"
+                case .vhs: return "VHS"
                 }
             }
         }

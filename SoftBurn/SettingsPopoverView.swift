@@ -73,13 +73,8 @@ struct SettingsPopoverView: View {
                     .disabled(!(settings.transitionStyle == .panAndZoom || settings.transitionStyle == .zoom))
             }
             
-            Divider()
-                .padding(.vertical, 4)
-            
-          
-            
            // Slide Duration
-            settingsRow(label: "Slide duration") {
+            settingsRow(label: "Duration") {
                 HStack(spacing: 8) {
                     Slider(value: slideDurationBinding, in: 1...15)
                         .frame(width: 100)
@@ -90,12 +85,15 @@ struct SettingsPopoverView: View {
                 }
             }
             
-            
             // Shuffle
             settingsRow(label: "") {
                 Toggle("Shuffle slides", isOn: $settings.shuffle)
                     .toggleStyle(.checkbox)
             }
+            
+            Divider()
+                .padding(.vertical, 4)
+            
             
             // Background Color
             settingsRow(label: "Background") {
@@ -115,7 +113,7 @@ struct SettingsPopoverView: View {
             }
             
             // Post-Processing Effects
-            settingsRow(label: "Effects") {
+            settingsRow(label: "Color") {
                 Picker("", selection: $settings.effect) {
                     ForEach(SlideshowDocument.Settings.PostProcessingEffect.allCases, id: \.self) { effect in
                         Text(effect.displayName).tag(effect)
@@ -125,8 +123,29 @@ struct SettingsPopoverView: View {
                 .frame(width: 150, alignment: .leading)
             }
             
+            // Patina (Film/Analog Effects)
+            settingsRow(label: "Effects") {
+                Picker("", selection: $settings.patina) {
+                    ForEach(SlideshowDocument.Settings.PatinaEffect.allCases, id: \.self) { patina in
+                        Text(patina.displayName).tag(patina)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 150, alignment: .leading)
+            }
+            
             Divider()
                 .padding(.vertical, 4)
+            
+            settingsRow(label: "Videos") {
+                Toggle("Play with sound", isOn: $settings.playVideosWithSound)
+                    .toggleStyle(.checkbox)
+            }
+            
+            settingsRow(label: "") {
+                Toggle("Play in full", isOn: $settings.playVideosInFull)
+                    .toggleStyle(.checkbox)
+            }
             
             // Music Selection
             settingsRow(label: "Music") {
@@ -160,17 +179,7 @@ struct SettingsPopoverView: View {
                         .opacity(settings.musicSelection == nil ? 0.5 : 1.0)
                 }
             }
-            
-            settingsRow(label: "Videos") {
-                Toggle("Play with sound", isOn: $settings.playVideosWithSound)
-                    .toggleStyle(.checkbox)
-            }
-            
-            settingsRow(label: "") {
-                Toggle("Play in full", isOn: $settings.playVideosInFull)
-                    .toggleStyle(.checkbox)
-            }
-            
+
             // File picker for custom music (hidden)
             .fileImporter(
                 isPresented: $showMusicFilePicker,
