@@ -147,7 +147,7 @@ struct ContentView: View {
                     }
                     .help("Rotate counterclockwise")
                     .disabled(!slideshowState.hasSinglePhotoSelection || isShowingViewer)
-
+                   
                     Button(action: {
                         slideshowState.removeSelectedPhotos()
                     }) {
@@ -159,7 +159,7 @@ struct ContentView: View {
                     Button(action: {
                         showSettings.toggle()
                     }) {
-                        Image(systemName: "gearshape")
+                        Image(systemName: "slider.horizontal.3")
                     }
                     .help("Slideshow settings")
                     .disabled(isShowingViewer)
@@ -525,7 +525,7 @@ struct ContentView: View {
                 Button(action: {
                     showSettings.toggle()
                 }) {
-                    Image(systemName: "gearshape")
+                    Image(systemName: "slider.horizontal.3")
                         .frame(width: 20, height: 20)
                 }
                 .help("Slideshow settings")

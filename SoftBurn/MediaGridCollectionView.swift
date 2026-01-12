@@ -855,7 +855,7 @@ final class MediaThumbnailCellView: NSView {
         wantsLayer = true
 
         backgroundView.wantsLayer = true
-        backgroundView.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        backgroundView.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
         backgroundView.layer?.cornerRadius = 8
         backgroundView.layer?.shadowColor = NSColor.black.withAlphaComponent(0.10).cgColor
         backgroundView.layer?.shadowOpacity = 1
@@ -926,7 +926,7 @@ final class MediaThumbnailCellView: NSView {
         outerSelectionLayer.lineWidth = 3
 
         innerSelectionLayer.fillColor = nil
-        innerSelectionLayer.strokeColor = NSColor.white.cgColor
+        innerSelectionLayer.strokeColor = NSColor.textBackgroundColor.cgColor
         innerSelectionLayer.lineWidth = 2
 
         // Draw selection ABOVE the thumbnail image, without clipping so the blue stroke can sit around the tile.
@@ -995,7 +995,7 @@ final class MediaThumbnailCellView: NSView {
         let corner: CGFloat = 8
         let outerRect = selectionOverlay.bounds
 
-        // Make the white border sit immediately inside the blue stroke (no visible gap).
+        // Make the inner border sit immediately inside the blue stroke (no visible gap).
         let outerLW = outerSelectionLayer.lineWidth
         let innerLW = innerSelectionLayer.lineWidth
         let innerInset = (outerLW / 2.0) + (innerLW / 2.0)

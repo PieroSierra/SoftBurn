@@ -22,7 +22,7 @@ struct ThumbnailView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(NSColor.controlBackgroundColor))
+                    .fill(Color(NSColor.textBackgroundColor))
                     .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
                 
                 if let thumbnail = thumbnail {

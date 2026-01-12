@@ -39,7 +39,7 @@ struct PatinaParams35mm {
 };
 
 constant PatinaParams35mm kPatina35mm = {
-    /*grainFineness*/     900.0,
+    /*grainFineness*/     675.0, // +25% grain size (fineness * 0.75)
     /*grainIntensity*/    0.050,
     /*blurRadius*/        0.85,
     /*toneMultiply*/      float3(1.02, 1.00, 0.985),
@@ -72,7 +72,7 @@ struct PatinaParamsAgedFilm {
 };
 
 constant PatinaParamsAgedFilm kPatinaAgedFilm = {
-    /*grainFineness*/         520.0,
+    /*grainFineness*/         390.0, // +25% grain size (fineness * 0.75)
     /*grainIntensity*/        0.055,
     /*blurRadius*/            1.10,
     /*jitterAmplitudeTexels*/ 1.2,
@@ -102,6 +102,7 @@ struct PatinaParamsVHS {
     float scanlineBase;
     float scanlineAmp;
     float scanlinePow;
+    float lineFrequencyScale;  // 0.5..1.0 (lower = thicker scanlines/tracking bands)
     float desat;               // 0..1 (higher = more color)
     float3 tintMultiply;
     float trackingThreshold;   // 0.98..1.0
@@ -121,6 +122,7 @@ constant PatinaParamsVHS kPatinaVHS = {
     /*scanlineBase*/      0.96,
     /*scanlineAmp*/       0.04,
     /*scanlinePow*/       0.3,
+    /*lineFrequencyScale*/0.75, // +25% line size (frequency * 0.75)
     /*desat*/             0.80,
     /*tintMultiply*/      float3(0.97, 1.00, 1.03),
     /*trackingThreshold*/ 0.995,
@@ -353,7 +355,7 @@ float3 applyVHS(texture2d<float> tex, sampler s, float2 uv, float time, float2 r
     result.b = mix(result.b, bSample, kPatinaVHS.chromaMix);
     
     // Very light scanline texture
-    float scanline = sin(uv.y * resolution.y * PI) * 0.5 + 0.5;
+    float scanline = sin(uv.y * (resolution.y * kPatinaVHS.lineFrequencyScale) * PI) * 0.5 + 0.5;
     scanline = pow(scanline, kPatinaVHS.scanlinePow); // Soften the scanlines
     result *= kPatinaVHS.scanlineBase + scanline * kPatinaVHS.scanlineAmp;
     
@@ -365,7 +367,7 @@ float3 applyVHS(texture2d<float> tex, sampler s, float2 uv, float time, float2 r
     result *= kPatinaVHS.tintMultiply;
 
     // Visual artifacts: subtle horizontal tracking lines + occasional static bursts.
-    float line = floor(uv.y * resolution.y);
+    float line = floor(uv.y * (resolution.y * kPatinaVHS.lineFrequencyScale));
     float lineNoise = hash12(float2(line, floor(time * 30.0)));
     float tracking = smoothstep(kPatinaVHS.trackingThreshold, 1.0, lineNoise);
     result *= 1.0 - tracking * kPatinaVHS.trackingIntensity;
