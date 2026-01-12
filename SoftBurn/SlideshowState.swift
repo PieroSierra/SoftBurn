@@ -30,6 +30,25 @@ class SlideshowState: ObservableObject {
         !selectedPhotoIDs.isEmpty
     }
     
+    /// Whether exactly one photo (not video) is selected
+    var hasSinglePhotoSelection: Bool {
+        guard selectedPhotoIDs.count == 1,
+              let selectedID = selectedPhotoIDs.first,
+              let selectedItem = photos.first(where: { $0.id == selectedID }) else {
+            return false
+        }
+        return selectedItem.kind == .photo
+    }
+    
+    /// Get the ID of the single selected photo, if exactly one photo is selected
+    var singleSelectedPhotoID: UUID? {
+        guard hasSinglePhotoSelection,
+              let selectedID = selectedPhotoIDs.first else {
+            return nil
+        }
+        return selectedID
+    }
+    
     /// Whether the slideshow is empty
     var isEmpty: Bool {
         photos.isEmpty

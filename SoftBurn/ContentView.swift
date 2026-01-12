@@ -139,6 +139,16 @@ struct ContentView: View {
                 // Trailing controls - disabled when viewer is open
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button(action: {
+                        if let photoID = slideshowState.singleSelectedPhotoID {
+                            slideshowState.rotatePhotoCounterclockwise(withID: photoID)
+                        }
+                    }) {
+                        Image(systemName: "rotate.left")
+                    }
+                    .help("Rotate counterclockwise")
+                    .disabled(!slideshowState.hasSinglePhotoSelection || isShowingViewer)
+
+                    Button(action: {
                         slideshowState.removeSelectedPhotos()
                     }) {
                         Image(systemName: "trash")
@@ -492,6 +502,17 @@ struct ContentView: View {
             
             // Right side buttons - disabled when viewer is open
             HStack(spacing: 12) {
+                Button(action: {
+                    if let photoID = slideshowState.singleSelectedPhotoID {
+                        slideshowState.rotatePhotoCounterclockwise(withID: photoID)
+                    }
+                }) {
+                    Image(systemName: "rotate.left")
+                        .frame(width: 20, height: 20)
+                }
+                .help("Rotate counterclockwise")
+                .disabled(!slideshowState.hasSinglePhotoSelection || isShowingViewer)
+                
                 Button(action: {
                     slideshowState.removeSelectedPhotos()
                 }) {
