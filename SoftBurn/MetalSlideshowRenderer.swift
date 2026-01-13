@@ -22,7 +22,8 @@ final class MetalSlideshowRenderer {
     // Scene pipeline (media layers)
     private let scenePipeline: MTLRenderPipelineState
     private let quadVertexBuffer: MTLBuffer
-    private var layerUniformBuffer: MTLBuffer
+    private var currentLayerUniformBuffer: MTLBuffer
+    private var nextLayerUniformBuffer: MTLBuffer
 
     // Patina pipeline (post-process)
     private let patinaPipeline: MTLRenderPipelineState
@@ -64,8 +65,9 @@ final class MetalSlideshowRenderer {
         ]
         quadVertexBuffer = device.makeBuffer(bytes: verts, length: MemoryLayout<V>.stride * verts.count, options: [.storageModeShared])!
 
-        // Size exactly for one uniform struct.
-        layerUniformBuffer = device.makeBuffer(length: MemoryLayout<LayerUniforms>.stride, options: [.storageModeShared])!
+        // Separate uniform buffers for current and next layers to prevent GPU race conditions
+        currentLayerUniformBuffer = device.makeBuffer(length: MemoryLayout<LayerUniforms>.stride, options: [.storageModeShared])!
+        nextLayerUniformBuffer = device.makeBuffer(length: MemoryLayout<LayerUniforms>.stride, options: [.storageModeShared])!
 
         // Patina uniforms match PatinaShaders.metal
         // IMPORTANT: size must match `PatinaUniforms` exactly (it is much larger than 256 bytes).
@@ -195,10 +197,10 @@ final class MetalSlideshowRenderer {
                     settings: settings,
                     slot: .current
                 )
-                writeLayerUniforms(u)
-                enc.setVertexBuffer(layerUniformBuffer, offset: 0, index: 1)
+                writeLayerUniforms(u, to: currentLayerUniformBuffer)
+                enc.setVertexBuffer(currentLayerUniformBuffer, offset: 0, index: 1)
                 enc.setFragmentTexture(tex, index: 0)
-                enc.setFragmentBuffer(layerUniformBuffer, offset: 0, index: 1)
+                enc.setFragmentBuffer(currentLayerUniformBuffer, offset: 0, index: 1)
                 enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             }
 
@@ -213,10 +215,10 @@ final class MetalSlideshowRenderer {
                     settings: settings,
                     slot: .next
                 )
-                writeLayerUniforms(u)
-                enc.setVertexBuffer(layerUniformBuffer, offset: 0, index: 1)
+                writeLayerUniforms(u, to: nextLayerUniformBuffer)
+                enc.setVertexBuffer(nextLayerUniformBuffer, offset: 0, index: 1)
                 enc.setFragmentTexture(tex, index: 0)
-                enc.setFragmentBuffer(layerUniformBuffer, offset: 0, index: 1)
+                enc.setFragmentBuffer(nextLayerUniformBuffer, offset: 0, index: 1)
                 enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             }
 
@@ -290,10 +292,10 @@ final class MetalSlideshowRenderer {
         var effectMode: Int32
     }
 
-    private func writeLayerUniforms(_ u: LayerUniforms) {
+    private func writeLayerUniforms(_ u: LayerUniforms, to buffer: MTLBuffer) {
         var uu = u
         withUnsafeBytes(of: &uu) { bytes in
-            memcpy(layerUniformBuffer.contents(), bytes.baseAddress!, MemoryLayout<LayerUniforms>.stride)
+            memcpy(buffer.contents(), bytes.baseAddress!, MemoryLayout<LayerUniforms>.stride)
         }
     }
 
