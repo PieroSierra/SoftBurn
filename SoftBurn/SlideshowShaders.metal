@@ -22,10 +22,12 @@ struct VertexOut {
 };
 
 struct LayerUniforms {
-    float2 scale;       // scales unit quad (-1..1) to fitted size in NDC
-    float2 translate;   // translation in NDC
-    float  opacity;     // 0..1
-    int    effectMode;  // 0 none, 1 monochrome, 2 silvertone, 3 sepia
+    float2 scale;           // scales unit quad (-1..1) to fitted size in NDC
+    float2 translate;       // translation in NDC
+    float  opacity;         // 0..1
+    int    effectMode;      // 0 none, 1 monochrome, 2 silvertone, 3 sepia
+    int    rotationDegrees; // 0, 90, 180, 270 (counterclockwise)
+    int    _pad0;           // padding for alignment
 };
 
 // MARK: - Helpers (Effects)
@@ -56,6 +58,27 @@ static inline float3 applyEffect(float3 rgb, int mode) {
     }
 }
 
+// MARK: - UV Rotation
+
+/// Rotate UV coordinates counterclockwise by 90-degree multiples.
+/// Uses swizzling/inversion for efficient rotation without trigonometry.
+static inline float2 rotateUV(float2 uv, int degrees) {
+    switch (degrees) {
+        case 90:
+            // Counterclockwise 90°: (u,v) -> (1-v, u)
+            return float2(1.0 - uv.y, uv.x);
+        case 180:
+            // 180°: (u,v) -> (1-u, 1-v)
+            return float2(1.0 - uv.x, 1.0 - uv.y);
+        case 270:
+            // Counterclockwise 270° (= clockwise 90°): (u,v) -> (v, 1-u)
+            return float2(uv.y, 1.0 - uv.x);
+        default:
+            // 0° or invalid: no rotation
+            return uv;
+    }
+}
+
 // MARK: - Shaders
 
 vertex VertexOut slideshowVertexShader(
@@ -67,7 +90,10 @@ vertex VertexOut slideshowVertexShader(
     float2 p = vertices[vid].position;
     p = p * u.scale + u.translate;
     out.position = float4(p, 0.0, 1.0);
-    out.uv = vertices[vid].uv;
+
+    // Apply rotation to UV coordinates (before fragment shader sampling)
+    out.uv = rotateUV(vertices[vid].uv, u.rotationDegrees);
+
     return out;
 }
 

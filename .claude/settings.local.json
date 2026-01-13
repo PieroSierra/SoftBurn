@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(xcodebuild:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git log:*)"
     ]
   }
 }

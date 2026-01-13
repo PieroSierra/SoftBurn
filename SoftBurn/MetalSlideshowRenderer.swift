@@ -262,8 +262,6 @@ final class MetalSlideshowRenderer {
         let didStart = key.url.startAccessingSecurityScopedResource()
         defer { if didStart { key.url.stopAccessingSecurityScopedResource() } }
 
-        // TODO: Apply rotationDegrees transform (currently not implemented for Metal path)
-        // Options: 1) Apply rotation in shader, 2) Pre-rotate bitmap (slow), 3) Use EXIF orientation
         return try? loader.newTexture(URL: key.url, options: [
             MTKTextureLoader.Option.SRGB: false,
             MTKTextureLoader.Option.origin: MTKTextureLoader.Origin.topLeft,
@@ -290,6 +288,8 @@ final class MetalSlideshowRenderer {
         var translate: SIMD2<Float>
         var opacity: Float
         var effectMode: Int32
+        var rotationDegrees: Int32  // 0, 90, 180, or 270 (counterclockwise)
+        var _pad0: Int32 = 0        // Padding for 16-byte alignment
     }
 
     private func writeLayerUniforms(_ u: LayerUniforms, to buffer: MTLBuffer) {
@@ -309,8 +309,28 @@ final class MetalSlideshowRenderer {
         // Compute fitted aspect scale (like .aspectRatio(.fit) into full frame)
         let viewW = max(1.0, Double(drawableSize.width))
         let viewH = max(1.0, Double(drawableSize.height))
-        let texW = max(1.0, Double(mediaTexture.width))
-        let texH = max(1.0, Double(mediaTexture.height))
+
+        // Get rotation from PhotoKey (if current/next photo texture)
+        let rotation: Int
+        if slot == .current, let key = currentPhotoKey {
+            rotation = key.rotationDegrees
+        } else if slot == .next, let key = nextPhotoKey {
+            rotation = key.rotationDegrees
+        } else {
+            rotation = 0
+        }
+
+        // Swap texture dimensions for 90° and 270° rotations (portrait <-> landscape)
+        let texW: Double
+        let texH: Double
+        if rotation == 90 || rotation == 270 {
+            texW = max(1.0, Double(mediaTexture.height))  // swapped
+            texH = max(1.0, Double(mediaTexture.width))   // swapped
+        } else {
+            texW = max(1.0, Double(mediaTexture.width))
+            texH = max(1.0, Double(mediaTexture.height))
+        }
+
         let viewAspect = viewW / viewH
         let texAspect = texW / texH
 
@@ -400,7 +420,8 @@ final class MetalSlideshowRenderer {
             scale: SIMD2<Float>(baseScaleX * Float(scale), baseScaleY * Float(scale)),
             translate: SIMD2<Float>(tx, ty),
             opacity: Float(opacity),
-            effectMode: effectMode
+            effectMode: effectMode,
+            rotationDegrees: Int32(rotation)
         )
     }
 
