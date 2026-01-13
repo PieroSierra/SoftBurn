@@ -7,6 +7,8 @@ import SwiftUI
 
 #if DEBUG
 
+import AppKit
+
 struct EffectTuningView: View {
     @EnvironmentObject private var tuning: PatinaTuningStore
 
@@ -55,6 +57,92 @@ private struct SliderRow: View {
     }
 }
 
+// MARK: - Clipboard helpers
+
+@MainActor
+private func copyToClipboard(_ string: String) {
+    let pb = NSPasteboard.general
+    pb.clearContents()
+    pb.setString(string, forType: .string)
+}
+
+private func fmt(_ v: Float) -> String { String(format: "%.6g", v) }
+
+private func dump(_ v: Patina35mmTuning) -> String {
+    """
+    Patina35mmTuning(
+        grainFineness: \(fmt(v.grainFineness)),
+        grainIntensity: \(fmt(v.grainIntensity)),
+        blurRadiusTexels: \(fmt(v.blurRadiusTexels)),
+        toneR: \(fmt(v.toneR)),
+        toneG: \(fmt(v.toneG)),
+        toneB: \(fmt(v.toneB)),
+        blackLift: \(fmt(v.blackLift)),
+        contrast: \(fmt(v.contrast)),
+        rolloffThreshold: \(fmt(v.rolloffThreshold)),
+        rolloffSoftness: \(fmt(v.rolloffSoftness)),
+        vignetteStrength: \(fmt(v.vignetteStrength)),
+        vignetteRadius: \(fmt(v.vignetteRadius))
+    )
+    """
+}
+
+private func dump(_ v: PatinaAgedFilmTuning) -> String {
+    """
+    PatinaAgedFilmTuning(
+        grainFineness: \(fmt(v.grainFineness)),
+        grainIntensity: \(fmt(v.grainIntensity)),
+        blurRadiusTexels: \(fmt(v.blurRadiusTexels)),
+        jitterAmplitudeTexels: \(fmt(v.jitterAmplitudeTexels)),
+        driftSpeed: \(fmt(v.driftSpeed)),
+        driftIntensity: \(fmt(v.driftIntensity)),
+        dimPulseSpeed: \(fmt(v.dimPulseSpeed)),
+        dimPulseThreshold: \(fmt(v.dimPulseThreshold)),
+        dimPulseIntensity: \(fmt(v.dimPulseIntensity)),
+        highlightSoftThreshold: \(fmt(v.highlightSoftThreshold)),
+        highlightSoftAmount: \(fmt(v.highlightSoftAmount)),
+        shadowLiftThreshold: \(fmt(v.shadowLiftThreshold)),
+        shadowLiftAmount: \(fmt(v.shadowLiftAmount)),
+        vignetteStrength: \(fmt(v.vignetteStrength)),
+        vignetteRadius: \(fmt(v.vignetteRadius)),
+        dustRate: \(fmt(v.dustRate)),
+        dustIntensity: \(fmt(v.dustIntensity))
+    )
+    """
+}
+
+private func dump(_ v: PatinaVHSTuning) -> String {
+    """
+    PatinaVHSTuning(
+        blurTap1: \(fmt(v.blurTap1)),
+        blurTap2: \(fmt(v.blurTap2)),
+        blurW0: \(fmt(v.blurW0)),
+        blurW1: \(fmt(v.blurW1)),
+        blurW2: \(fmt(v.blurW2)),
+        chromaOffsetTexels: \(fmt(v.chromaOffsetTexels)),
+        chromaMix: \(fmt(v.chromaMix)),
+        scanlineBase: \(fmt(v.scanlineBase)),
+        scanlineAmp: \(fmt(v.scanlineAmp)),
+        scanlinePow: \(fmt(v.scanlinePow)),
+        lineFrequencyScale: \(fmt(v.lineFrequencyScale)),
+        desat: \(fmt(v.desat)),
+        tintR: \(fmt(v.tintR)),
+        tintG: \(fmt(v.tintG)),
+        tintB: \(fmt(v.tintB)),
+        trackingThreshold: \(fmt(v.trackingThreshold)),
+        trackingIntensity: \(fmt(v.trackingIntensity)),
+        staticIntensity: \(fmt(v.staticIntensity)),
+        tearEnabled: \(fmt(v.tearEnabled)),
+        tearGateRate: \(fmt(v.tearGateRate)),
+        tearGateThreshold: \(fmt(v.tearGateThreshold)),
+        tearSpeed: \(fmt(v.tearSpeed)),
+        tearBandHeight: \(fmt(v.tearBandHeight)),
+        tearOffsetTexels: \(fmt(v.tearOffsetTexels)),
+        edgeSoftStrength: \(fmt(v.edgeSoftStrength))
+    )
+    """
+}
+
 // MARK: - 35mm
 
 private struct Patina35mmTuningTab: View {
@@ -63,6 +151,17 @@ private struct Patina35mmTuningTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Spacer()
+                    Button {
+                        copyToClipboard(dump(mm35))
+                    } label: {
+                        Image(systemName: "document.on.document")
+                    }
+                    .help("Copy 35mm settings to clipboard")
+                    .buttonStyle(.plain)
+                }
+
                 GroupBox("Grain") {
                     SliderRow(title: "grainFineness", value: $mm35.grainFineness, range: Patina35mmTuning.ranges["grainFineness"]!)
                     SliderRow(title: "grainIntensity", value: $mm35.grainIntensity, range: Patina35mmTuning.ranges["grainIntensity"]!)
@@ -99,6 +198,17 @@ private struct PatinaAgedFilmTuningTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Spacer()
+                    Button {
+                        copyToClipboard(dump(aged))
+                    } label: {
+                        Image(systemName: "document.on.document")
+                    }
+                    .help("Copy Aged Film settings to clipboard")
+                    .buttonStyle(.plain)
+                }
+
                 GroupBox("Grain") {
                     SliderRow(title: "grainFineness", value: $aged.grainFineness, range: PatinaAgedFilmTuning.ranges["grainFineness"]!)
                     SliderRow(title: "grainIntensity", value: $aged.grainIntensity, range: PatinaAgedFilmTuning.ranges["grainIntensity"]!)
@@ -143,6 +253,17 @@ private struct PatinaVHSTuningTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Spacer()
+                    Button {
+                        copyToClipboard(dump(vhs))
+                    } label: {
+                        Image(systemName: "document.on.document")
+                    }
+                    .help("Copy VHS settings to clipboard")
+                    .buttonStyle(.plain)
+                }
+
                 GroupBox("Blur") {
                     SliderRow(title: "blurTap1", value: $vhs.blurTap1, range: PatinaVHSTuning.ranges["blurTap1"]!)
                     SliderRow(title: "blurTap2", value: $vhs.blurTap2, range: PatinaVHSTuning.ranges["blurTap2"]!)
