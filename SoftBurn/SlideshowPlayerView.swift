@@ -726,10 +726,11 @@ struct CrossFadeTransitionView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .opacity(playerState.isTransitioning ? (1.0 - transitionProgress) : 1.0)
-                
+                .opacity(playerState.animationProgress < 1.0 ? (playerState.isTransitioning ? (1.0 - transitionProgress) : 1.0) : 0.0)
+
                 // Transition phase: fade next in while current fades out.
-                if playerState.isTransitioning {
+                // Keep rendering next image until advanceSlide() completes (animationProgress < 1.0 ensures no gap)
+                if playerState.animationProgress >= transitionStartProgress {
                     Group {
                         switch playerState.nextKind {
                         case .photo:
@@ -746,7 +747,7 @@ struct CrossFadeTransitionView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .opacity(transitionProgress)
+                    .opacity(min(1.0, transitionProgress))
                 }
             }
         }
@@ -814,7 +815,7 @@ struct PanAndZoomTransitionView: View {
                                 endScale: endScale,
                                 motionElapsed: currentMotionElapsed,
                                 motionTotal: motionTotalDuration,
-                                opacity: playerState.isTransitioning ? (1.0 - transitionProgress) : 1.0
+                                opacity: playerState.animationProgress < 1.0 ? (playerState.isTransitioning ? (1.0 - transitionProgress) : 1.0) : 0.0
                             )
                         }
                     case .video:
@@ -827,14 +828,14 @@ struct PanAndZoomTransitionView: View {
                                 endScale: endScale,
                                 motionElapsed: currentMotionElapsed,
                                 motionTotal: motionTotalDuration,
-                                opacity: playerState.isTransitioning ? (1.0 - transitionProgress) : 1.0
+                                opacity: playerState.animationProgress < 1.0 ? (playerState.isTransitioning ? (1.0 - transitionProgress) : 1.0) : 0.0
                             )
                         }
                     }
                 }
-                
-                // Next image: only during transition; starts moving immediately.
-                if playerState.isTransitioning {
+
+                // Next image: starts moving during transition; stays visible until advanceSlide() completes
+                if playerState.animationProgress >= transitionStartProgress {
                     Group {
                         switch playerState.nextKind {
                         case .photo:
@@ -850,7 +851,7 @@ struct PanAndZoomTransitionView: View {
                                     endScale: endScale,
                                     motionElapsed: nextMotionElapsed,
                                     motionTotal: motionTotalDuration,
-                                    opacity: transitionProgress
+                                    opacity: min(1.0, transitionProgress)
                                 )
                             }
                         case .video:
@@ -863,7 +864,7 @@ struct PanAndZoomTransitionView: View {
                                     endScale: endScale,
                                     motionElapsed: nextMotionElapsed,
                                     motionTotal: motionTotalDuration,
-                                    opacity: transitionProgress
+                                    opacity: min(1.0, transitionProgress)
                                 )
                             }
                         }

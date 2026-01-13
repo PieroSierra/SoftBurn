@@ -202,8 +202,9 @@ final class MetalSlideshowRenderer {
                 enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             }
 
-            // Draw next (only during transition)
-            if playerState.isTransitioning,
+            // Draw next (during and after transition, until advanceSlide completes)
+            let transitionStart = playerState.currentHoldDuration / playerState.totalSlideDuration
+            if playerState.animationProgress >= transitionStart,
                let tex = textureForSlot(kind: playerState.nextKind, slot: .next) {
                 let u = makeLayerUniforms(
                     mediaTexture: tex,
@@ -259,8 +260,8 @@ final class MetalSlideshowRenderer {
         let didStart = key.url.startAccessingSecurityScopedResource()
         defer { if didStart { key.url.stopAccessingSecurityScopedResource() } }
 
-        // NOTE: rotationDegrees is not applied yet (v1 for Metal path); we’ll add rotation support next.
-        // Many images will already be oriented by the file’s stored pixel data, but some may differ.
+        // TODO: Apply rotationDegrees transform (currently not implemented for Metal path)
+        // Options: 1) Apply rotation in shader, 2) Pre-rotate bitmap (slow), 3) Use EXIF orientation
         return try? loader.newTexture(URL: key.url, options: [
             MTKTextureLoader.Option.SRGB: false,
             MTKTextureLoader.Option.origin: MTKTextureLoader.Origin.topLeft,
@@ -340,6 +341,12 @@ final class MetalSlideshowRenderer {
 
         let opacity: Double = {
             if playerState.transitionStyle == .plain { return 1.0 }
+
+            // Prevent flash: keep current at 0 opacity when animationProgress reaches 1.0
+            if slot == .current && playerState.animationProgress >= 1.0 {
+                return 0.0
+            }
+
             if !playerState.isTransitioning { return 1.0 }
             switch slot {
             case .current: return 1.0 - transitionProgress
