@@ -64,10 +64,12 @@ final class MetalSlideshowRenderer {
         ]
         quadVertexBuffer = device.makeBuffer(bytes: verts, length: MemoryLayout<V>.stride * verts.count, options: [.storageModeShared])!
 
-        layerUniformBuffer = device.makeBuffer(length: 256, options: [.storageModeShared])! // enough for 1 struct
+        // Size exactly for one uniform struct.
+        layerUniformBuffer = device.makeBuffer(length: MemoryLayout<LayerUniforms>.stride, options: [.storageModeShared])!
 
         // Patina uniforms match PatinaShaders.metal
-        patinaUniformBuffer = device.makeBuffer(length: 256, options: [.storageModeShared])!
+        // IMPORTANT: size must match `PatinaUniforms` exactly (it is much larger than 256 bytes).
+        patinaUniformBuffer = device.makeBuffer(length: MemoryLayout<PatinaUniforms>.stride, options: [.storageModeShared])!
         patinaSeed = Float.random(in: 0...1000)
         startTime = CACurrentMediaTime()
 
@@ -395,11 +397,77 @@ final class MetalSlideshowRenderer {
 
     // MARK: - Patina uniforms
 
+    private struct PatinaParams35mm {
+        var grainFineness: Float
+        var grainIntensity: Float
+        var blurRadiusTexels: Float
+        var toneMultiplyRGBA: SIMD4<Float>
+        var blackLift: Float
+        var contrast: Float
+        var rolloffThreshold: Float
+        var rolloffSoftness: Float
+        var vignetteStrength: Float
+        var vignetteRadius: Float
+        var _pad0: SIMD2<Float> = .zero
+    }
+
+    private struct PatinaParamsAgedFilm {
+        var grainFineness: Float
+        var grainIntensity: Float
+        var blurRadiusTexels: Float
+        var jitterAmplitudeTexels: Float
+        var driftSpeed: Float
+        var driftIntensity: Float
+        var dimPulseSpeed: Float
+        var dimPulseThreshold: Float
+        var dimPulseIntensity: Float
+        var highlightSoftThreshold: Float
+        var highlightSoftAmount: Float
+        var shadowLiftThreshold: Float
+        var shadowLiftAmount: Float
+        var vignetteStrength: Float
+        var vignetteRadius: Float
+        var dustRate: Float
+        var dustIntensity: Float
+        var _pad0: SIMD3<Float> = .zero
+    }
+
+    private struct PatinaParamsVHS {
+        var blurTap1: Float
+        var blurTap2: Float
+        var blurW0: Float
+        var blurW1: Float
+        var blurW2: Float
+        var chromaOffsetTexels: Float
+        var chromaMix: Float
+        var scanlineBase: Float
+        var scanlineAmp: Float
+        var scanlinePow: Float
+        var lineFrequencyScale: Float
+        var desat: Float
+        var tintMultiplyRGBA: SIMD4<Float>
+        var trackingThreshold: Float
+        var trackingIntensity: Float
+        var staticIntensity: Float
+        var tearEnabled: Float
+        var tearGateRate: Float
+        var tearGateThreshold: Float
+        var tearSpeed: Float
+        var tearBandHeight: Float
+        var tearOffsetTexels: Float
+        var edgeSoftStrength: Float
+        var _pad0: Float = 0
+    }
+
     private struct PatinaUniforms {
         var mode: Int32
         var time: Float
         var resolution: SIMD2<Float>
         var seed: Float
+        var _pad0: Float = 0
+        var p35: PatinaParams35mm
+        var aged: PatinaParamsAgedFilm
+        var vhs: PatinaParamsVHS
     }
 
     private func writePatinaUniforms(effect: SlideshowDocument.Settings.PatinaEffect, drawableTexture: MTLTexture) {
@@ -411,11 +479,75 @@ final class MetalSlideshowRenderer {
         case .vhs: mode = 3
         }
         let t = Float(CACurrentMediaTime() - startTime)
+        let tuning = PatinaTuningStore.shared
+
+        let p35 = PatinaParams35mm(
+            grainFineness: tuning.mm35.grainFineness,
+            grainIntensity: tuning.mm35.grainIntensity,
+            blurRadiusTexels: tuning.mm35.blurRadiusTexels,
+            toneMultiplyRGBA: SIMD4<Float>(tuning.mm35.toneR, tuning.mm35.toneG, tuning.mm35.toneB, 1),
+            blackLift: tuning.mm35.blackLift,
+            contrast: tuning.mm35.contrast,
+            rolloffThreshold: tuning.mm35.rolloffThreshold,
+            rolloffSoftness: tuning.mm35.rolloffSoftness,
+            vignetteStrength: tuning.mm35.vignetteStrength,
+            vignetteRadius: tuning.mm35.vignetteRadius
+        )
+
+        let aged = PatinaParamsAgedFilm(
+            grainFineness: tuning.aged.grainFineness,
+            grainIntensity: tuning.aged.grainIntensity,
+            blurRadiusTexels: tuning.aged.blurRadiusTexels,
+            jitterAmplitudeTexels: tuning.aged.jitterAmplitudeTexels,
+            driftSpeed: tuning.aged.driftSpeed,
+            driftIntensity: tuning.aged.driftIntensity,
+            dimPulseSpeed: tuning.aged.dimPulseSpeed,
+            dimPulseThreshold: tuning.aged.dimPulseThreshold,
+            dimPulseIntensity: tuning.aged.dimPulseIntensity,
+            highlightSoftThreshold: tuning.aged.highlightSoftThreshold,
+            highlightSoftAmount: tuning.aged.highlightSoftAmount,
+            shadowLiftThreshold: tuning.aged.shadowLiftThreshold,
+            shadowLiftAmount: tuning.aged.shadowLiftAmount,
+            vignetteStrength: tuning.aged.vignetteStrength,
+            vignetteRadius: tuning.aged.vignetteRadius,
+            dustRate: tuning.aged.dustRate,
+            dustIntensity: tuning.aged.dustIntensity
+        )
+
+        let vhs = PatinaParamsVHS(
+            blurTap1: tuning.vhs.blurTap1,
+            blurTap2: tuning.vhs.blurTap2,
+            blurW0: tuning.vhs.blurW0,
+            blurW1: tuning.vhs.blurW1,
+            blurW2: tuning.vhs.blurW2,
+            chromaOffsetTexels: tuning.vhs.chromaOffsetTexels,
+            chromaMix: tuning.vhs.chromaMix,
+            scanlineBase: tuning.vhs.scanlineBase,
+            scanlineAmp: tuning.vhs.scanlineAmp,
+            scanlinePow: tuning.vhs.scanlinePow,
+            lineFrequencyScale: tuning.vhs.lineFrequencyScale,
+            desat: tuning.vhs.desat,
+            tintMultiplyRGBA: SIMD4<Float>(tuning.vhs.tintR, tuning.vhs.tintG, tuning.vhs.tintB, 1),
+            trackingThreshold: tuning.vhs.trackingThreshold,
+            trackingIntensity: tuning.vhs.trackingIntensity,
+            staticIntensity: tuning.vhs.staticIntensity,
+            tearEnabled: tuning.vhs.tearEnabled,
+            tearGateRate: tuning.vhs.tearGateRate,
+            tearGateThreshold: tuning.vhs.tearGateThreshold,
+            tearSpeed: tuning.vhs.tearSpeed,
+            tearBandHeight: tuning.vhs.tearBandHeight,
+            tearOffsetTexels: tuning.vhs.tearOffsetTexels,
+            edgeSoftStrength: tuning.vhs.edgeSoftStrength
+        )
+
         let u = PatinaUniforms(
             mode: mode,
             time: t,
             resolution: SIMD2<Float>(Float(drawableTexture.width), Float(drawableTexture.height)),
-            seed: patinaSeed
+            seed: patinaSeed,
+            p35: p35,
+            aged: aged,
+            vhs: vhs
         )
         var uu = u
         withUnsafeBytes(of: &uu) { bytes in

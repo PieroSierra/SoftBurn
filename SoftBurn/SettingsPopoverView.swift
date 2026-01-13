@@ -122,7 +122,7 @@ struct SettingsPopoverView: View {
                 .labelsHidden()
                 .frame(width: 150, alignment: .leading)
             }
-            
+
             // Patina (Film/Analog Effects)
             settingsRow(label: "Effects") {
                 Picker("", selection: $settings.patina) {
@@ -133,6 +133,15 @@ struct SettingsPopoverView: View {
                 .labelsHidden()
                 .frame(width: 150, alignment: .leading)
             }
+                
+#if DEBUG
+            settingsRow(label: "") {
+                Button("Effect Settings") {
+                    EffectTuningWindowController.shared.show()
+                }
+                .buttonStyle(.link)
+            }
+#endif
             
             Divider()
                 .padding(.vertical, 4)
