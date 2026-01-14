@@ -1,3 +1,6 @@
+WORK IN PROGRESS
+---
+
 # SoftBurn
 
 > _A beautiful, free slideshow app for macOS that doesn't compromise on taste._
@@ -125,7 +128,3 @@ Contributions are welcome! Please:
 ## License
 
 [To be determined - add license here]
-
----
-
-Built with ☕️ and an appreciation for the analog aesthetics of the pre-digital era.
