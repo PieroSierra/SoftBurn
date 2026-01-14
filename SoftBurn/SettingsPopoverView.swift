@@ -13,6 +13,8 @@ struct SettingsPopoverView: View {
     @ObservedObject var settings: SlideshowSettings
     @State private var showColorPicker = false
     @State private var showMusicFilePicker = false
+    @State private var availableDisplays: [PlaybackDisplayOption] = []
+    @State private var showMonitorPicker: Bool = false
     
     private let labelWidth: CGFloat = 100
     
@@ -40,17 +42,29 @@ struct SettingsPopoverView: View {
     /// Current music selection option based on settings
     private var currentMusicOption: MusicSelectionOption {
         guard let selection = settings.musicSelection else { return .none }
-        
+
         if let url = URL(string: selection), url.isFileURL {
             return .custom
         }
-        
+
         switch selection {
         case "winters_tale": return .wintersTale
         case "brighter_plans": return .brighterPlans
         case "innovation": return .innovation
         default: return .none
         }
+    }
+
+    /// Update available displays based on current screen configuration
+    private func updateAvailableDisplays() {
+        let appScreen = PlaybackDisplaySelection.currentAppScreen()
+        let externalOptions = PlaybackDisplaySelection.externalDisplayOptions(relativeTo: appScreen)
+        showMonitorPicker = !externalOptions.isEmpty
+
+        // Build full list: App Display + external monitors
+        availableDisplays = [
+            PlaybackDisplayOption(id: PlaybackDisplaySelection.appDisplayID, title: "App Display")
+        ] + externalOptions
     }
     
     var body: some View {
@@ -133,7 +147,20 @@ struct SettingsPopoverView: View {
                 .labelsHidden()
                 .frame(width: 150, alignment: .leading)
             }
-                
+
+            // Monitor Selection (only visible when external displays exist)
+            if showMonitorPicker {
+                settingsRow(label: "Monitor") {
+                    Picker("", selection: $settings.playbackDisplayID) {
+                        ForEach(availableDisplays) { option in
+                            Text(option.title).tag(option.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150, alignment: .leading)
+                }
+            }
+
 #if DEBUG
             settingsRow(label: "") {
                 Button("Effect Settings") {
@@ -232,10 +259,16 @@ struct SettingsPopoverView: View {
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .center)
-   
+
         }
         .padding(16)
         .frame(width: 290)
+        .onAppear {
+            updateAvailableDisplays()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            updateAvailableDisplays()
+        }
     }
     
     /// Helper to create consistently aligned settings rows

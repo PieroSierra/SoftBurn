@@ -24,7 +24,8 @@ class SlideshowSettings: ObservableObject {
     @AppStorage("settings.playVideosInFull") private var storedPlayVideosInFull: Bool = false
     @AppStorage("settings.effect") private var storedEffect: String = "none"
     @AppStorage("settings.patina") private var storedPatina: String = "none"
-    
+    @AppStorage("settings.playbackDisplayID") private var storedPlaybackDisplayID: Int = 0
+
 #if DEBUG
     @AppStorage("settings.debugShowFaces") private var storedDebugShowFaces: Bool = false
 #endif
@@ -66,7 +67,11 @@ class SlideshowSettings: ObservableObject {
     @Published var patina: SlideshowDocument.Settings.PatinaEffect = .none {
         didSet { storedPatina = patina.rawValue }
     }
-    
+
+    @Published var playbackDisplayID: PlaybackDisplayID = 0 {
+        didSet { storedPlaybackDisplayID = playbackDisplayID }
+    }
+
     /// Music selection (per-document, not persisted to UserDefaults)
     @Published var musicSelection: String? = nil
     
@@ -103,6 +108,7 @@ class SlideshowSettings: ObservableObject {
         playVideosInFull = storedPlayVideosInFull
         effect = SlideshowDocument.Settings.PostProcessingEffect(rawValue: storedEffect) ?? .none
         patina = SlideshowDocument.Settings.PatinaEffect(rawValue: storedPatina) ?? .none
+        playbackDisplayID = storedPlaybackDisplayID
 #if DEBUG
         debugShowFaces = storedDebugShowFaces
 #endif

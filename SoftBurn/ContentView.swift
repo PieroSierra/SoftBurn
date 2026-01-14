@@ -380,7 +380,8 @@ struct ContentView: View {
 
         SlideshowWindowController.shared.present(
             rootView: AnyView(slideshowView),
-            backgroundColor: NSColor(settings.backgroundColor)
+            backgroundColor: NSColor(settings.backgroundColor),
+            displayID: settings.playbackDisplayID
         )
     }
     
@@ -750,8 +751,21 @@ class SlideshowWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
     
-    func present(rootView: AnyView, backgroundColor: NSColor) {
-        guard let screen = NSScreen.main else { return }
+    func present(rootView: AnyView, backgroundColor: NSColor, displayID: PlaybackDisplayID = 0) {
+        // Resolve target screen with fallback chain
+        let targetScreen: NSScreen
+        if displayID == PlaybackDisplaySelection.appDisplayID {
+            // Use "app display" - the screen containing the main app window
+            targetScreen = PlaybackDisplaySelection.currentAppScreen(excluding: self.window) ?? NSScreen.main ?? NSScreen.screens.first!
+        } else {
+            // Try to find the selected external display by ID
+            if let screen = PlaybackDisplaySelection.screen(for: displayID) {
+                targetScreen = screen
+            } else {
+                // Fallback: selected monitor disconnected, use app display
+                targetScreen = PlaybackDisplaySelection.currentAppScreen(excluding: self.window) ?? NSScreen.main ?? NSScreen.screens.first!
+            }
+        }
 
         // Prevent the screen saver / display sleep while playing.
         ScreenIdleSleepController.shared.start()
@@ -761,7 +775,7 @@ class SlideshowWindowController: NSObject, NSWindowDelegate {
             if let existing = self.window { return existing }
 
             let w = NSWindow(
-                contentRect: screen.frame,
+                contentRect: targetScreen.frame,
                 styleMask: [.borderless],
                 backing: .buffered,
                 defer: false
@@ -792,7 +806,7 @@ class SlideshowWindowController: NSObject, NSWindowDelegate {
         NSApp.presentationOptions = (previousPresentationOptions ?? []).union([.hideDock, .hideMenuBar])
 
         window.backgroundColor = backgroundColor
-        window.setFrame(screen.frame, display: true)
+        window.setFrame(targetScreen.frame, display: true)
         window.contentView = NSHostingView(rootView: rootView)
 
         window.makeKeyAndOrderFront(nil)

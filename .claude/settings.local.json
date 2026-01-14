@@ -3,7 +3,8 @@
     "allow": [
       "Bash(xcodebuild:*)",
       "Bash(ls:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(tee:*)"
     ]
   }
 }
