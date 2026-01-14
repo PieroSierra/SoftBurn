@@ -5,7 +5,8 @@ WORK IN PROGRESS
 
 > _A beautiful, free slideshow app for macOS that doesn't compromise on taste._
 
-**[Hero screenshot coming soon]**
+![Screenshot](Screenshot.png)
+
 
 ## Why SoftBurn?
 
