@@ -148,6 +148,16 @@ struct SettingsPopoverView: View {
                 .frame(width: 150, alignment: .leading)
             }
 
+
+#if DEBUG
+            settingsRow(label: "") {
+                Button("Effect Settings") {
+                    EffectTuningWindowController.shared.show()
+                }
+                .buttonStyle(.link)
+            }
+#endif
+            
             // Monitor Selection (only visible when external displays exist)
             if showMonitorPicker {
                 settingsRow(label: "Monitor") {
@@ -160,15 +170,6 @@ struct SettingsPopoverView: View {
                     .frame(width: 150, alignment: .leading)
                 }
             }
-
-#if DEBUG
-            settingsRow(label: "") {
-                Button("Effect Settings") {
-                    EffectTuningWindowController.shared.show()
-                }
-                .buttonStyle(.link)
-            }
-#endif
             
             Divider()
                 .padding(.vertical, 4)
