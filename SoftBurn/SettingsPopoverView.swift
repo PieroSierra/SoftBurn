@@ -139,24 +139,28 @@ struct SettingsPopoverView: View {
 
             // Patina (Film/Analog Effects)
             settingsRow(label: "Effects") {
-                Picker("", selection: $settings.patina) {
-                    ForEach(SlideshowDocument.Settings.PatinaEffect.allCases, id: \.self) { patina in
-                        Text(patina.displayName).tag(patina)
+                HStack(spacing: 4) {
+                    Picker("", selection: $settings.patina) {
+                        ForEach(SlideshowDocument.Settings.PatinaEffect.allCases, id: \.self) { patina in
+                            Text(patina.displayName).tag(patina)
+                        }
                     }
-                }
-                .labelsHidden()
-                .frame(width: 150, alignment: .leading)
-            }
-
+                    .labelsHidden()
+                   // .frame(width: 150, alignment: .leading)
 
 #if DEBUG
-            settingsRow(label: "") {
-                Button("Effect Settings") {
-                    EffectTuningWindowController.shared.show()
-                }
-                .buttonStyle(.link)
-            }
+                    Button(action: {
+                        EffectTuningWindowController.shared.show()
+                    }) {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Effect Settings")
+                    Spacer()
 #endif
+                }
+            }
             
             // Monitor Selection (only visible when external displays exist)
             if showMonitorPicker {

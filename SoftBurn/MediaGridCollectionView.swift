@@ -538,7 +538,7 @@ final class MediaGridContainerView: NSView {
 
         flowLayout.minimumInteritemSpacing = 16
         flowLayout.minimumLineSpacing = 16
-        flowLayout.sectionInset = NSEdgeInsets(top: 16, left: 16, bottom: 220, right: 16)
+        flowLayout.sectionInset = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
         flowLayout.scrollDirection = .vertical
 
         collectionView.collectionViewLayout = flowLayout
@@ -564,7 +564,7 @@ final class MediaGridContainerView: NSView {
     
     private func updateContentInsets() {
         // Top inset accounts for toolbar; bottom gives whitespace for deselect + marquee.
-        scrollView.contentInsets = NSEdgeInsets(top: toolbarInset, left: 0, bottom: 120, right: 0)
+        scrollView.contentInsets = NSEdgeInsets(top: toolbarInset, left: 0, bottom: 16, right: 0)
         // Auto-scroll to top of content when inset changes (prevents jump).
         scrollView.automaticallyAdjustsContentInsets = false
     }
