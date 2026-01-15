@@ -1,6 +1,3 @@
-<mark>WORK IN PROGRESS</mark>
----
-
 # SoftBurn
 
 *A beautiful, free slideshow app for macOS that doesn't compromise on taste.*
@@ -137,4 +134,6 @@ Contributions are welcome! Please:
 
 ## License
 
-[To be determined - add license here]
+## License
+
+This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
