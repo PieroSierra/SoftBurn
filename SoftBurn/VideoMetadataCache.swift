@@ -6,6 +6,7 @@
 import AVFoundation
 import Foundation
 import CoreGraphics
+import Photos
 
 /// Caches video metadata needed for UI (duration).
 actor VideoMetadataCache {
@@ -14,6 +15,36 @@ actor VideoMetadataCache {
     private var durationByURL: [URL: Double] = [:]
 
     private init() {}
+
+    /// Get duration for a MediaItem (supports both filesystem and Photos Library)
+    func durationSeconds(for item: MediaItem) async -> Double? {
+        switch item.source {
+        case .filesystem(let url):
+            return await durationSeconds(for: url)
+        case .photosLibrary(let localID, _):
+            return await durationSecondsFromPhotosLibrary(localIdentifier: localID)
+        }
+    }
+
+    /// Get duration string for a MediaItem
+    func durationString(for item: MediaItem) async -> String? {
+        guard let seconds = await durationSeconds(for: item) else { return nil }
+        return Self.format(seconds: seconds)
+    }
+
+    /// Get duration from Photos Library video
+    private func durationSecondsFromPhotosLibrary(localIdentifier: String) async -> Double? {
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject else {
+            return nil
+        }
+
+        guard asset.mediaType == .video else {
+            return nil
+        }
+
+        // PHAsset has a duration property
+        return asset.duration
+    }
 
     func durationSeconds(for url: URL) async -> Double? {
         if let cached = durationByURL[url] {

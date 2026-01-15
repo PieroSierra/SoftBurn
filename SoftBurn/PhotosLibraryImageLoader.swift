@@ -117,4 +117,40 @@ actor PhotosLibraryImageLoader {
     func loadFullResolutionNSImage(localIdentifier: String) async -> NSImage? {
         return await loadNSImage(localIdentifier: localIdentifier, targetSize: PHImageManagerMaximumSize)
     }
+
+    // MARK: - Video URL Loading
+
+    /// Get playable video URL for Photos Library video asset
+    func getVideoURL(localIdentifier: String) async -> URL? {
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject else {
+            print("📸 Video: Failed to fetch asset")
+            return nil
+        }
+
+        guard asset.mediaType == .video else {
+            print("📸 Video: Asset is not a video")
+            return nil
+        }
+
+        print("📸 Video: Requesting playable URL for \(localIdentifier)")
+
+        let options = PHVideoRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .highQualityFormat
+
+        return await withCheckedContinuation { continuation in
+            PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, audioMix, info in
+                if let urlAsset = avAsset as? AVURLAsset {
+                    print("📸 Video: Got playable URL: \(urlAsset.url)")
+                    continuation.resume(returning: urlAsset.url)
+                } else if let error = info?[PHImageErrorKey] as? Error {
+                    print("📸 Video: Error getting URL: \(error)")
+                    continuation.resume(returning: nil)
+                } else {
+                    print("📸 Video: Failed to get URL (not a URL asset)")
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
 }

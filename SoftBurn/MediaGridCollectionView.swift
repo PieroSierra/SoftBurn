@@ -1112,7 +1112,8 @@ final class MediaThumbnailCellView: NSView {
 
         if media.kind == .video {
             durationTask = Task {
-                let text = await VideoMetadataCache.shared.durationString(for: url)
+                // Use MediaItem-based method to support both filesystem and Photos Library
+                let text = await VideoMetadataCache.shared.durationString(for: media)
                 await MainActor.run { [weak self] in
                     guard let self, self.currentID == id else { return }
                     if let text {

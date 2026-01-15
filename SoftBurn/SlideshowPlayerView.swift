@@ -349,8 +349,13 @@ class SlideshowPlayerState: ObservableObject {
             currentEndOffset = Self.faceTargetOffset(from: rotatedFaces)
         case .video:
             currentImage = nil
-            currentVideoPlayer = makePlayer(url: currentItem.url, shouldAutoPlay: true)
-            installVideoEndObserver(for: currentVideoPlayer, slot: .current)
+            if let url = await getPlayableURL(for: currentItem) {
+                currentVideoPlayer = makePlayer(url: url, shouldAutoPlay: true)
+                installVideoEndObserver(for: currentVideoPlayer, slot: .current)
+            } else {
+                print("📸 Failed to get playable URL for current video")
+                currentVideoPlayer = nil
+            }
         }
 
         // Load next
@@ -367,8 +372,13 @@ class SlideshowPlayerState: ObservableObject {
             nextEndOffset = Self.faceTargetOffset(from: rotatedFaces)
         case .video:
             nextImage = nil
-            nextVideoPlayer = makePlayer(url: nextItem.url, shouldAutoPlay: false)
-            installVideoEndObserver(for: nextVideoPlayer, slot: .next)
+            if let url = await getPlayableURL(for: nextItem) {
+                nextVideoPlayer = makePlayer(url: url, shouldAutoPlay: false)
+                installVideoEndObserver(for: nextVideoPlayer, slot: .next)
+            } else {
+                print("📸 Failed to get playable URL for next video")
+                nextVideoPlayer = nil
+            }
         }
     }
     
@@ -465,8 +475,13 @@ class SlideshowPlayerState: ObservableObject {
             nextImage = nil
             nextFaceBoxes = []
             nextEndOffset = .zero
-            nextVideoPlayer = makePlayer(url: nextItem.url, shouldAutoPlay: false)
-            installVideoEndObserver(for: nextVideoPlayer, slot: .next)
+            if let url = await getPlayableURL(for: nextItem) {
+                nextVideoPlayer = makePlayer(url: url, shouldAutoPlay: false)
+                installVideoEndObserver(for: nextVideoPlayer, slot: .next)
+            } else {
+                print("📸 Failed to get playable URL for next video")
+                nextVideoPlayer = nil
+            }
         }
 
         scheduleNextAdvance()
@@ -485,6 +500,13 @@ class SlideshowPlayerState: ObservableObject {
     }
 
     private func makePlayer(url: URL, shouldAutoPlay: Bool) -> AVPlayer {
+        // Start accessing security-scoped resource (important for Photos Library URLs)
+        let didStartAccess = url.startAccessingSecurityScopedResource()
+        print("📸 Video: Started security-scoped access: \(didStartAccess) for \(url.lastPathComponent)")
+
+        // Note: We don't stop access here because the player needs ongoing access
+        // The URL will be released when the player is deallocated
+
         let item = AVPlayerItem(url: url)
         let p = AVPlayer(playerItem: item)
         p.isMuted = !playVideosWithSound
@@ -495,6 +517,16 @@ class SlideshowPlayerState: ObservableObject {
             p.seek(to: .zero)
         }
         return p
+    }
+
+    /// Get playable URL for a MediaItem (handles both filesystem and Photos Library)
+    private func getPlayableURL(for item: MediaItem) async -> URL? {
+        switch item.source {
+        case .filesystem(let url):
+            return url
+        case .photosLibrary(let localID, _):
+            return await PhotosLibraryImageLoader.shared.getVideoURL(localIdentifier: localID)
+        }
     }
 
     private enum VideoSlot { case current, next }
