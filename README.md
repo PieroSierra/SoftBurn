@@ -1,12 +1,11 @@
-WORK IN PROGRESS
+<mark>WORK IN PROGRESS</mark>
 ---
 
 # SoftBurn
 
-> _A beautiful, free slideshow app for macOS that doesn't compromise on taste._
+*A beautiful, free slideshow app for macOS that doesn't compromise on taste.*
 
 ![Screenshot](Screenshot.png)
-
 
 ## Why SoftBurn?
 
@@ -26,7 +25,7 @@ There are surprisingly few free, beautiful, and simple media slideshow apps for 
 
 ## Technical Highlights
 
-SoftBurn is a love letter to native macOS development:
+SoftBurn focuses on native macOS development:
 
 - **Swift 6 Concurrency** - Strict actor isolation with background processing for heavy operations
 - **SwiftUI + Metal 3** - Hybrid rendering strategy: SwiftUI for simple transitions, Metal for advanced effects
@@ -111,11 +110,15 @@ SoftBurn/
 
 ## Roadmap
 
-- [ ] Multi-monitor support refinements
-- [ ] Additional transition styles
+- [x] Enable Metal render pipeline.
+- [x] Multi-monitor support
+- [ ] Photo App support
+- [ ] Tweak VHS and Patina effects
+  - [ ] Improve tearing
+  - [ ] Increase chromatic abberration
+- [ ] Photo Album style
 - [ ] Export to video
-- [ ] Cloud storage integration
-- [ ] Customizable keyboard shortcuts
+- [ ] Localisation
 
 ## Contributing
 

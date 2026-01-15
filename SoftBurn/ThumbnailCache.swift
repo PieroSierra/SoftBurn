@@ -11,22 +11,77 @@ import SwiftUI
 import CoreGraphics
 import ImageIO
 @preconcurrency import AVFoundation
+import Photos
 
 /// Manages thumbnail generation and caching for performance
 actor ThumbnailCache {
     static let shared = ThumbnailCache()
-    
+
     private struct Key: Hashable {
-        let url: URL
-        let rotationDegrees: Int
+        enum Source: Hashable {
+            case filesystem(url: URL, rotation: Int)
+            case photosLibrary(localIdentifier: String, rotation: Int)
+        }
+        let source: Source
+
+        init(url: URL, rotationDegrees: Int) {
+            self.source = .filesystem(url: url, rotation: rotationDegrees)
+        }
+
+        init(photosLibraryLocalIdentifier: String, rotationDegrees: Int) {
+            self.source = .photosLibrary(localIdentifier: photosLibraryLocalIdentifier, rotation: rotationDegrees)
+        }
+
+        init(from item: MediaItem) {
+            switch item.source {
+            case .filesystem(let url):
+                self.source = .filesystem(url: url, rotation: item.rotationDegrees)
+            case .photosLibrary(let localID, _):
+                self.source = .photosLibrary(localIdentifier: localID, rotation: item.rotationDegrees)
+            }
+        }
     }
 
     private var cache: [Key: NSImage] = [:]
     private let thumbnailSize: CGFloat = 350 // Target size for longest edge
-    
+
     private init() {}
-    
-    /// Generate or retrieve a thumbnail for a photo URL
+
+    /// Generate or retrieve a thumbnail for a MediaItem
+    func thumbnail(for item: MediaItem) async -> NSImage? {
+        let key = Key(from: item)
+        print("📸 ThumbnailCache: Requesting thumbnail for \(item.id)")
+        print("📸 ThumbnailCache: Key source = \(key.source)")
+
+        // Check cache first
+        if let cached = cache[key] {
+            print("📸 ThumbnailCache: Cache hit!")
+            return cached
+        }
+
+        print("📸 ThumbnailCache: Cache miss, generating...")
+
+        // Generate thumbnail based on source
+        let image: NSImage?
+        switch item.source {
+        case .filesystem(let url):
+            print("📸 ThumbnailCache: Loading from filesystem: \(url.path)")
+            image = await generateThumbnail(for: url, rotationDegrees: item.rotationDegrees)
+        case .photosLibrary(let localID, _):
+            print("📸 ThumbnailCache: Loading from Photos Library: \(localID) with rotation \(item.rotationDegrees)")
+            image = await generateThumbnailFromPhotosLibrary(localIdentifier: localID, rotationDegrees: item.rotationDegrees)
+        }
+
+        if let generatedImage = image {
+            print("📸 ThumbnailCache: Successfully generated thumbnail")
+            cache[key] = generatedImage
+        } else {
+            print("📸 ThumbnailCache: Failed to generate thumbnail")
+        }
+        return image
+    }
+
+    /// Generate or retrieve a thumbnail for a photo URL (legacy method)
     func thumbnail(for url: URL, rotationDegrees: Int = 0) async -> NSImage? {
         let rotation = MediaItem.normalizedRotationDegrees(rotationDegrees)
         let key = Key(url: url, rotationDegrees: rotation)
@@ -34,15 +89,31 @@ actor ThumbnailCache {
         if let cached = cache[key] {
             return cached
         }
-        
+
         // Generate thumbnail
         guard let image = await generateThumbnail(for: url, rotationDegrees: rotation) else {
             return nil
         }
-        
+
         // Cache it
         cache[key] = image
         return image
+    }
+
+    /// Generate a thumbnail from Photos Library
+    private func generateThumbnailFromPhotosLibrary(localIdentifier: String, rotationDegrees: Int) async -> NSImage? {
+        // Photos Library handles EXIF orientation automatically
+        let targetSize = CGSize(width: thumbnailSize, height: thumbnailSize)
+        guard let image = await PhotosLibraryImageLoader.shared.loadNSImage(localIdentifier: localIdentifier, targetSize: targetSize) else {
+            return nil
+        }
+
+        // Apply slideshow rotation metadata (after EXIF orientation, as Photos Library loads it)
+        let d = MediaItem.normalizedRotationDegrees(rotationDegrees)
+        guard d != 0 else { return image }
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
+        guard let rotated = Self.rotateCGImage(cg, degrees: d) else { return image }
+        return NSImage(cgImage: rotated, size: NSSize(width: rotated.width, height: rotated.height))
     }
     
     /// Generate a thumbnail from a photo URL
@@ -232,7 +303,12 @@ actor ThumbnailCache {
     func removeCache(for urls: [URL]) {
         // Remove all rotation variants for these URLs.
         for url in urls {
-            cache = cache.filter { $0.key.url != url }
+            cache = cache.filter { key, _ in
+                if case .filesystem(let keyURL, _) = key.source {
+                    return keyURL != url
+                }
+                return true
+            }
         }
     }
 }

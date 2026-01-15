@@ -7,26 +7,94 @@
 
 import AppKit
 import SwiftUI
+import Photos
 
 /// Manages efficient loading of full-resolution images for slideshow playback.
 /// Only keeps one image loaded at a time, with optional preloading of the next image.
 actor PlaybackImageLoader {
-    
+
     /// Cache for loaded images (max 2: current + next)
     private struct Key: Hashable {
-        let url: URL
-        let rotationDegrees: Int
+        enum Source: Hashable {
+            case filesystem(url: URL, rotation: Int)
+            case photosLibrary(localIdentifier: String, rotation: Int)
+        }
+        let source: Source
+
+        var rotationDegrees: Int {
+            switch source {
+            case .filesystem(_, let rotation):
+                return rotation
+            case .photosLibrary(_, let rotation):
+                return rotation
+            }
+        }
+
+        init(url: URL, rotationDegrees: Int) {
+            self.source = .filesystem(url: url, rotation: rotationDegrees)
+        }
+
+        init(photosLibraryLocalIdentifier: String, rotationDegrees: Int) {
+            self.source = .photosLibrary(localIdentifier: photosLibraryLocalIdentifier, rotation: rotationDegrees)
+        }
+
+        init(from item: MediaItem) {
+            switch item.source {
+            case .filesystem(let url):
+                self.source = .filesystem(url: url, rotation: item.rotationDegrees)
+            case .photosLibrary(let localID, _):
+                self.source = .photosLibrary(localIdentifier: localID, rotation: item.rotationDegrees)
+            }
+        }
     }
 
     private var imageCache: [Key: NSImage] = [:]
-    
+
     /// Currently displayed image URL
     private var currentKey: Key?
-    
+
     /// Preloaded next image URL
     private var preloadedKey: Key?
-    
-    /// Load an image for playback (full resolution)
+
+    /// Load an image for playback from MediaItem
+    func loadImage(for item: MediaItem) async -> NSImage? {
+        let key = Key(from: item)
+        print("📸 PlaybackImageLoader: Loading image for item \(item.id)")
+        print("📸 PlaybackImageLoader: Key = \(key)")
+
+        // Check cache first
+        if let cached = imageCache[key] {
+            print("📸 PlaybackImageLoader: Cache hit!")
+            return cached
+        }
+
+        print("📸 PlaybackImageLoader: Cache miss, loading...")
+
+        // Load based on source
+        let image: NSImage?
+        switch item.source {
+        case .filesystem(let url):
+            print("📸 PlaybackImageLoader: Loading from filesystem")
+            image = await loadFromDisk(url: url, rotationDegrees: item.rotationDegrees)
+        case .photosLibrary(let localID, _):
+            print("📸 PlaybackImageLoader: Loading from Photos Library: \(localID)")
+            image = await loadFromPhotosLibrary(localIdentifier: localID, rotationDegrees: item.rotationDegrees)
+        }
+
+        guard let loadedImage = image else {
+            print("📸 PlaybackImageLoader: Failed to load image")
+            return nil
+        }
+
+        print("📸 PlaybackImageLoader: Successfully loaded image: \(loadedImage.size)")
+
+        // Cache the image
+        imageCache[key] = loadedImage
+
+        return loadedImage
+    }
+
+    /// Load an image for playback (full resolution) - legacy method for filesystem
     func loadImage(for url: URL, rotationDegrees: Int = 0) async -> NSImage? {
         let rotation = MediaItem.normalizedRotationDegrees(rotationDegrees)
         let key = Key(url: url, rotationDegrees: rotation)
@@ -34,15 +102,15 @@ actor PlaybackImageLoader {
         if let cached = imageCache[key] {
             return cached
         }
-        
+
         // Load from disk
         guard let image = await loadFromDisk(url: url, rotationDegrees: rotation) else {
             return nil
         }
-        
+
         // Cache the image
         imageCache[key] = image
-        
+
         return image
     }
     
@@ -94,6 +162,21 @@ actor PlaybackImageLoader {
         }
 
         // Apply slideshow rotation metadata (after EXIF orientation, as NSImage loads it).
+        let d = MediaItem.normalizedRotationDegrees(rotationDegrees)
+        guard d != 0 else { return image }
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
+        guard let rotated = Self.rotateCGImage(cg, degrees: d) else { return image }
+        return NSImage(cgImage: rotated, size: NSSize(width: rotated.width, height: rotated.height))
+    }
+
+    /// Load image from Photos Library
+    private func loadFromPhotosLibrary(localIdentifier: String, rotationDegrees: Int) async -> NSImage? {
+        // Load from Photos Library
+        guard let image = await PhotosLibraryImageLoader.shared.loadFullResolutionNSImage(localIdentifier: localIdentifier) else {
+            return nil
+        }
+
+        // Apply rotation if needed (Photos Library handles EXIF, we handle metadata rotation)
         let d = MediaItem.normalizedRotationDegrees(rotationDegrees)
         guard d != 0 else { return image }
         guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }

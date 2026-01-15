@@ -15,23 +15,57 @@ struct MediaItem: Identifiable, Hashable, Codable, Sendable {
         case video
     }
 
+    enum Source: Codable, Sendable, Hashable {
+        case filesystem(URL)
+        case photosLibrary(localIdentifier: String, cloudIdentifier: String?)
+    }
+
     let id: UUID
-    let url: URL
+    let source: Source
     let kind: Kind
     /// Non-destructive rotation metadata (degrees counterclockwise).
     /// Allowed values: 0, 90, 180, 270.
+    /// Note: Only applicable to filesystem photos. Photos Library items handle rotation via PhotoKit.
     var rotationDegrees: Int
 
     init(url: URL, kind: Kind, rotationDegrees: Int = 0) {
         self.id = UUID()
-        self.url = url
+        self.source = .filesystem(url)
         self.kind = kind
         self.rotationDegrees = MediaItem.normalizedRotationDegrees(rotationDegrees)
     }
 
+    init(photosLibraryLocalIdentifier: String, cloudIdentifier: String?, kind: Kind) {
+        self.id = UUID()
+        self.source = .photosLibrary(localIdentifier: photosLibraryLocalIdentifier, cloudIdentifier: cloudIdentifier)
+        self.kind = kind
+        self.rotationDegrees = 0 // Photos Library handles EXIF rotation
+    }
+
+    /// Backward-compatible URL property (returns synthetic URL for Photos Library items)
+    var url: URL {
+        switch source {
+        case .filesystem(let url):
+            return url
+        case .photosLibrary(let localID, _):
+            return URL(string: "photos://asset/\(localID)")!
+        }
+    }
+
+    /// Returns true if this item is from Photos Library
+    var isFromPhotosLibrary: Bool {
+        if case .photosLibrary = source { return true }
+        return false
+    }
+
     /// File name for display
     var fileName: String {
-        url.lastPathComponent
+        switch source {
+        case .filesystem(let url):
+            return url.lastPathComponent
+        case .photosLibrary(let localID, _):
+            return "Photos: \(localID.prefix(8))..."
+        }
     }
 }
 

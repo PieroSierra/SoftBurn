@@ -1085,7 +1085,8 @@ final class MediaThumbnailCellView: NSView {
         let id = media.id
         let rotation = (media.kind == .photo) ? media.rotationDegrees : 0
         thumbnailTask = Task {
-            let thumb = await ThumbnailCache.shared.thumbnail(for: url, rotationDegrees: rotation)
+            // Use MediaItem-based method to support both filesystem and Photos Library
+            let thumb = await ThumbnailCache.shared.thumbnail(for: media)
             await MainActor.run { [weak self] in
                 guard let self, self.currentID == id else { return }
                 self.progress.stopAnimation(nil)

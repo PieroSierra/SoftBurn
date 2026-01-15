@@ -34,11 +34,15 @@ struct SlideshowDocument: Codable {
     /// Global slideshow settings (placeholder for future features)
     var settings: Settings
     
+    /// Photos Library identifiers (v6+). Maps cache key to identifiers.
+    /// Cache key format: "photos://localID" for Photos Library items.
+    var photosLibraryIdentifiers: [String: PhotosIdentifier]?
+
     /// File extension for slideshow documents
     static let fileExtension = "softburn"
-    
+
     /// Current document format version
-    static let currentVersion = 5
+    static let currentVersion = 6
     
     // MARK: - Nested Types
     
@@ -158,8 +162,14 @@ struct SlideshowDocument: Codable {
     }
 
     struct MediaEntry: Codable, Hashable {
+        enum MediaSource: Codable, Hashable {
+            case filesystem(path: String)
+            case photosLibrary(localIdentifier: String, cloudIdentifier: String?)
+        }
+
         var kind: MediaItem.Kind
-        var path: String
+        var path: String? // legacy (v1-v5)
+        var source: MediaSource? // v6+
         /// Non-destructive rotation metadata (degrees counterclockwise).
         /// Allowed values: 0, 90, 180, 270.
         var rotationDegrees: Int
@@ -167,14 +177,39 @@ struct SlideshowDocument: Codable {
         init(kind: MediaItem.Kind, path: String, rotationDegrees: Int = 0) {
             self.kind = kind
             self.path = path
+            self.source = .filesystem(path: path)
             self.rotationDegrees = MediaItem.normalizedRotationDegrees(rotationDegrees)
+        }
+
+        init(kind: MediaItem.Kind, source: MediaSource, rotationDegrees: Int = 0) {
+            self.kind = kind
+            self.source = source
+            self.rotationDegrees = MediaItem.normalizedRotationDegrees(rotationDegrees)
+            // Set path for backward compatibility with v5 readers
+            if case .filesystem(let path) = source {
+                self.path = path
+            } else {
+                self.path = nil
+            }
         }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self.kind = try c.decode(MediaItem.Kind.self, forKey: .kind)
-            self.path = try c.decode(String.self, forKey: .path)
             self.rotationDegrees = MediaItem.normalizedRotationDegrees((try? c.decode(Int.self, forKey: .rotationDegrees)) ?? 0)
+
+            // Try to decode source (v6+), fallback to path (v5 and earlier)
+            if let source = try? c.decode(MediaSource.self, forKey: .source) {
+                self.source = source
+                // Also decode path if present
+                self.path = try? c.decode(String.self, forKey: .path)
+            } else if let path = try? c.decode(String.self, forKey: .path) {
+                // Legacy v5: migrate path to source
+                self.path = path
+                self.source = .filesystem(path: path)
+            } else {
+                throw DecodingError.dataCorruptedError(forKey: .path, in: c, debugDescription: "MediaEntry missing both source and path")
+            }
         }
     }
 
@@ -203,15 +238,40 @@ struct SlideshowDocument: Codable {
             CGRect(x: x, y: y, width: width, height: height)
         }
     }
+
+    /// Photos Library identifiers for cross-device asset resolution
+    struct PhotosIdentifier: Codable, Hashable {
+        var localIdentifier: String
+        var cloudIdentifier: String?
+
+        init(localIdentifier: String, cloudIdentifier: String?) {
+            self.localIdentifier = localIdentifier
+            self.cloudIdentifier = cloudIdentifier
+        }
+    }
     
     // MARK: - Initialization
-    
+
     init(photos: [MediaItem], title: String = "Untitled Slideshow") {
         self.version = Self.currentVersion
         self.metadata = Metadata(title: title)
-        self.photoPaths = photos.filter { $0.kind == .photo }.map { $0.url.path } // legacy compatibility
-        self.mediaItems = photos.map { MediaEntry(kind: $0.kind, path: $0.url.path, rotationDegrees: $0.rotationDegrees) }
+        // legacy compatibility: extract filesystem photo paths only
+        self.photoPaths = photos.compactMap {
+            if $0.kind == .photo, case .filesystem(let url) = $0.source {
+                return url.path
+            }
+            return nil
+        }
+        self.mediaItems = photos.map {
+            switch $0.source {
+            case .filesystem(let url):
+                return MediaEntry(kind: $0.kind, source: .filesystem(path: url.path), rotationDegrees: $0.rotationDegrees)
+            case .photosLibrary(let localID, let cloudID):
+                return MediaEntry(kind: $0.kind, source: .photosLibrary(localIdentifier: localID, cloudIdentifier: cloudID), rotationDegrees: $0.rotationDegrees)
+            }
+        }
         self.bookmarksByPath = nil
+        self.photosLibraryIdentifiers = nil
         self.faceRectsByPath = nil
         self.settings = Settings()
     }
@@ -253,43 +313,56 @@ struct SlideshowDocument: Codable {
     }
     
     // MARK: - Photo Loading
-    
-    /// Convert stored paths back to PhotoItems, filtering out missing files
+
+    /// Convert stored paths back to MediaItems for filesystem items only.
+    /// Photos Library items require PhotosLibraryManager for resolution.
+    /// Use this method for legacy v5 documents; v6+ should use PhotosLibraryManager.resolveAssets().
     func loadMediaItems() -> [MediaItem] {
         let entries: [MediaEntry] = mediaItems ?? photoPaths.map { MediaEntry(kind: .photo, path: $0) }
         var items: [MediaItem] = []
 
         for entry in entries {
-            var url = URL(fileURLWithPath: entry.path)
+            guard let source = entry.source else { continue }
 
-            // If a bookmark is present, resolve it and start security-scoped access.
-            if let bookmarkString = bookmarksByPath?[entry.path],
-               let bookmarkData = Data(base64Encoded: bookmarkString) {
-                var isStale = false
-                if let resolved = try? URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: [.withSecurityScope],
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale
-                ) {
-                    url = resolved
-                    _ = url.startAccessingSecurityScopedResource()
+            switch source {
+            case .filesystem(let path):
+                var url = URL(fileURLWithPath: path)
+
+                // If a bookmark is present, resolve it and start security-scoped access.
+                if let bookmarkString = bookmarksByPath?[path],
+                   let bookmarkData = Data(base64Encoded: bookmarkString) {
+                    var isStale = false
+                    if let resolved = try? URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: [.withSecurityScope],
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    ) {
+                        url = resolved
+                        _ = url.startAccessingSecurityScopedResource()
+                    }
                 }
-            }
-            
-            // Check if file exists (silently skip missing files)
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                continue
-            }
-            
-            switch entry.kind {
-            case .photo:
-                guard MediaItem.isImageFile(url) else { continue }
-                items.append(MediaItem(url: url, kind: .photo, rotationDegrees: entry.rotationDegrees))
-            case .video:
-                guard MediaItem.isVideoFile(url) else { continue }
-                // Videos are not rotatable; ignore any persisted rotation.
-                items.append(MediaItem(url: url, kind: .video, rotationDegrees: 0))
+
+                // Check if file exists (silently skip missing files)
+                guard FileManager.default.fileExists(atPath: url.path) else {
+                    continue
+                }
+
+                switch entry.kind {
+                case .photo:
+                    guard MediaItem.isImageFile(url) else { continue }
+                    items.append(MediaItem(url: url, kind: .photo, rotationDegrees: entry.rotationDegrees))
+                case .video:
+                    guard MediaItem.isVideoFile(url) else { continue }
+                    // Videos are not rotatable; ignore any persisted rotation.
+                    items.append(MediaItem(url: url, kind: .video, rotationDegrees: 0))
+                }
+
+            case .photosLibrary(let localID, let cloudID):
+                // Photos Library items require PhotosLibraryManager for resolution
+                // This placeholder creates the MediaItem structure, but asset verification
+                // must be done separately via PhotosLibraryManager.resolveAssets()
+                items.append(MediaItem(photosLibraryLocalIdentifier: localID, cloudIdentifier: cloudID, kind: entry.kind))
             }
         }
 

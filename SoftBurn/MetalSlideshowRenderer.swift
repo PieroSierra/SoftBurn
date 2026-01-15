@@ -14,6 +14,7 @@ import MetalKit
 import AppKit
 import AVFoundation
 import SwiftUI
+import Photos
 
 final class MetalSlideshowRenderer {
     private let device: MTLDevice
@@ -36,13 +37,47 @@ final class MetalSlideshowRenderer {
 
     // Cached photo textures (loaded directly from MediaItem URLs; avoids NSImage/HDR conversion issues)
     private struct PhotoKey: Hashable {
-        let url: URL
-        let rotationDegrees: Int
+        enum Source: Hashable {
+            case filesystem(url: URL, rotation: Int)
+            case photosLibrary(localIdentifier: String, rotation: Int)
+        }
+        let source: Source
+
+        var rotationDegrees: Int {
+            switch source {
+            case .filesystem(_, let rotation):
+                return rotation
+            case .photosLibrary(_, let rotation):
+                return rotation
+            }
+        }
+
+        // Convenience initializers
+        init(url: URL, rotationDegrees: Int) {
+            self.source = .filesystem(url: url, rotation: rotationDegrees)
+        }
+
+        init(photosLibraryLocalIdentifier: String, rotationDegrees: Int) {
+            self.source = .photosLibrary(localIdentifier: photosLibraryLocalIdentifier, rotation: rotationDegrees)
+        }
+
+        init(from item: MediaItem) {
+            switch item.source {
+            case .filesystem(let url):
+                self.source = .filesystem(url: url, rotation: item.rotationDegrees)
+            case .photosLibrary(let localID, _):
+                self.source = .photosLibrary(localIdentifier: localID, rotation: item.rotationDegrees)
+            }
+        }
     }
     private var currentPhotoTexture: MTLTexture?
     private var nextPhotoTexture: MTLTexture?
     private var currentPhotoKey: PhotoKey?
     private var nextPhotoKey: PhotoKey?
+
+    // Texture cache for Photos Library assets (to avoid reloading)
+    private var photosLibraryTextureCache: [String: MTLTexture] = [:]
+    private var photosLibraryLoadingSet: Set<String> = []
 
     // Video texture sources (GPU sampling via AVPlayerItemVideoOutput)
     private let currentVideoSource: VideoTextureSource
@@ -116,7 +151,7 @@ final class MetalSlideshowRenderer {
             let nextItem = playerState.photos[nextIndex]
 
             if currentItem.kind == .photo {
-                let key = PhotoKey(url: currentItem.url, rotationDegrees: currentItem.rotationDegrees)
+                let key = PhotoKey(from: currentItem)
                 if currentPhotoKey != key || currentPhotoTexture == nil {
                     currentPhotoTexture = loadPhotoTexture(from: key)
                     currentPhotoKey = currentPhotoTexture == nil ? nil : key
@@ -127,7 +162,7 @@ final class MetalSlideshowRenderer {
             }
 
             if nextItem.kind == .photo {
-                let key = PhotoKey(url: nextItem.url, rotationDegrees: nextItem.rotationDegrees)
+                let key = PhotoKey(from: nextItem)
                 if nextPhotoKey != key || nextPhotoTexture == nil {
                     nextPhotoTexture = loadPhotoTexture(from: key)
                     nextPhotoKey = nextPhotoTexture == nil ? nil : key
@@ -258,16 +293,91 @@ final class MetalSlideshowRenderer {
     }
 
     private func loadPhotoTexture(from key: PhotoKey) -> MTLTexture? {
-        let loader = MTKTextureLoader(device: device)
-        let didStart = key.url.startAccessingSecurityScopedResource()
-        defer { if didStart { key.url.stopAccessingSecurityScopedResource() } }
+        switch key.source {
+        case .filesystem(let url, _):
+            return loadTextureFromFilesystem(url: url)
+        case .photosLibrary(let localID, _):
+            return loadTextureFromPhotosLibrary(localIdentifier: localID)
+        }
+    }
 
-        return try? loader.newTexture(URL: key.url, options: [
+    private func loadTextureFromFilesystem(url: URL) -> MTLTexture? {
+        let loader = MTKTextureLoader(device: device)
+        let didStart = url.startAccessingSecurityScopedResource()
+        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+
+        return try? loader.newTexture(URL: url, options: [
             MTKTextureLoader.Option.SRGB: false,
             MTKTextureLoader.Option.origin: MTKTextureLoader.Origin.topLeft,
             MTKTextureLoader.Option.textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
             MTKTextureLoader.Option.textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue),
         ])
+    }
+
+    private func loadTextureFromPhotosLibrary(localIdentifier: String) -> MTLTexture? {
+        // Check cache first
+        if let cached = photosLibraryTextureCache[localIdentifier] {
+            print("📸 Metal: Cache hit for \(localIdentifier)")
+            return cached
+        }
+
+        // If already loading, return nil (will be available next frame)
+        if photosLibraryLoadingSet.contains(localIdentifier) {
+            print("📸 Metal: Already loading \(localIdentifier)")
+            return nil
+        }
+
+        // Mark as loading
+        photosLibraryLoadingSet.insert(localIdentifier)
+        print("📸 Metal: Starting async load for \(localIdentifier)")
+
+        // Start async load (don't block!)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+
+            if let cgImage = await PhotosLibraryImageLoader.shared.loadFullResolutionCGImage(localIdentifier: localIdentifier) {
+                print("📸 Metal: Got CGImage: \(cgImage.width)x\(cgImage.height)")
+
+                let loader = MTKTextureLoader(device: self.device)
+                do {
+                    let texture = try await loader.newTexture(cgImage: cgImage, options: [
+                        MTKTextureLoader.Option.SRGB: false,
+                        MTKTextureLoader.Option.origin: MTKTextureLoader.Origin.topLeft,
+                        MTKTextureLoader.Option.textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
+                        MTKTextureLoader.Option.textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue),
+                    ])
+
+                    print("📸 Metal: Created texture: \(texture.width)x\(texture.height)")
+
+                    // Store in cache (must be on main thread to avoid race conditions)
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        self.photosLibraryTextureCache[localIdentifier] = texture
+                        self.photosLibraryLoadingSet.remove(localIdentifier)
+                        print("📸 Metal: Cached texture for \(localIdentifier)")
+                    }
+                } catch {
+                    print("📸 Metal: Error creating texture: \(error)")
+                    await MainActor.run { [weak self] in
+                        self?.photosLibraryLoadingSet.remove(localIdentifier)
+                    }
+                }
+            } else {
+                print("📸 Metal: Failed to load CGImage")
+                await MainActor.run { [weak self] in
+                    self?.photosLibraryLoadingSet.remove(localIdentifier)
+                }
+            }
+        }
+
+        // Return nil immediately - texture will be available next frame
+        print("📸 Metal: Returning nil (loading async)")
+        return nil
+    }
+
+    private func needsRedraw() {
+        // Trigger a redraw (implementation depends on how the view is set up)
+        // This might already happen automatically via the display link
     }
 
     private func textureForSlot(kind: MediaItem.Kind, slot: Slot) -> MTLTexture? {

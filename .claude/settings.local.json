@@ -4,7 +4,18 @@
       "Bash(xcodebuild:*)",
       "Bash(ls:*)",
       "Bash(git log:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "Bash(wc:*)",
+      "WebSearch",
+      "Bash(git checkout:*)",
+      "Bash(plutil:*)",
+      "Bash(tccutil reset:*)",
+      "Bash(killall:*)",
+      "Bash(codesign:*)",
+      "Bash(/usr/libexec/PlistBuddy:*)",
+      "Bash(grep:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

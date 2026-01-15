@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import Photos
 
 /// Custom UTType for .softburn files
 extension UTType {
@@ -41,11 +42,16 @@ struct ContentView: View {
     @State private var isShowingViewer = false
     @State private var viewerStartID: UUID?
     @State private var mainWindowSize: CGSize = CGSize(width: 1000, height: 700)
-    
+    @State private var isImportingFromPhotos = false
+
     /// Height of our custom toolbar (used for content inset on older macOS).
     private let customToolbarHeight: CGFloat = 44
-    
+
     var body: some View {
+        contentWithModifiers
+    }
+
+    private var contentWithModifiers: some View {
         ZStack {
             // Background color for the window
             Color(NSColor.controlBackgroundColor)
@@ -106,6 +112,22 @@ struct ContentView: View {
                         Label("Add Media", systemImage: "plus")
                     }
                     .help("Add media")
+                    .disabled(isShowingViewer)
+
+                    Button(action: {
+                        Task {
+                            let status = await PhotosLibraryManager.shared.requestAuthorization()
+                            print("📸 Authorization status: \(status)")
+                            if status {
+                                isImportingFromPhotos = true
+                            } else {
+                                print("📸 Authorization denied")
+                            }
+                        }
+                    }) {
+                        Label("Add from Photos", systemImage: "photo.on.rectangle")
+                    }
+                    .help("Add from Photos Library")
                     .disabled(isShowingViewer)
 
                     Button(action: {
@@ -210,6 +232,10 @@ struct ContentView: View {
                 print("Save error: \(error.localizedDescription)")
             }
         }
+        .photosLibraryIntegration(
+            isImportingFromPhotos: $isImportingFromPhotos,
+            onSelection: handlePhotosLibrarySelection
+        )
         // Warning dialog when opening with existing photos
         .alert("Replace Current Slideshow?", isPresented: $showOpenWarning) {
             Button("Cancel", role: .cancel) {
@@ -464,8 +490,8 @@ struct ContentView: View {
                 }
                 .help("Add media")
                 .disabled(isShowingViewer)
-                
-                
+
+
                 Button(action: {
                     importMode = .slideshow
                     isImporting = true
@@ -670,6 +696,19 @@ struct ContentView: View {
         } catch {
             print("Error loading slideshow: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Photos Library
+
+    @MainActor
+    private func handlePhotosLibrarySelection(_ assets: [PHAsset]) {
+        print("📸 Photos selected: \(assets.count)")
+        let mediaItems = PhotosLibraryManager.shared.createMediaItems(from: assets)
+        print("📸 Media items created: \(mediaItems.count)")
+        slideshowState.addPhotos(mediaItems)
+        print("📸 Total photos in slideshow: \(slideshowState.photoCount)")
+        session.markDirty()
+        isImportingFromPhotos = false
     }
 
     // MARK: - Save

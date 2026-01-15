@@ -334,15 +334,15 @@ class SlideshowPlayerState: ObservableObject {
         case .photo:
             currentVideoPlayer?.pause()
             currentVideoPlayer = nil
-            let preload: (url: URL, rotationDegrees: Int)? = (nextItem.kind == .photo) ? (nextItem.url, nextItem.rotationDegrees) : nil
-            if let image = await imageLoader.setCurrent(currentItem.url, rotationDegrees: currentItem.rotationDegrees, preloadNext: preload) {
+            // Use MediaItem-based method to support both filesystem and Photos Library
+            if let image = await imageLoader.loadImage(for: currentItem) {
                 guard !isStopped else { return }
                 currentImage = image
             } else {
                 currentImage = nil
             }
 
-            let faces = await FaceDetectionCache.shared.cachedFaces(for: currentItem.url) ?? []
+            let faces = await FaceDetectionCache.shared.cachedFaces(for: currentItem) ?? []
             // Rotate faces in Vision space to match the rotated bitmap we render.
             let rotatedFaces = Self.rotateVisionRects(faces, degrees: currentItem.rotationDegrees)
             currentFaceBoxes = rotatedFaces
@@ -358,9 +358,10 @@ class SlideshowPlayerState: ObservableObject {
         case .photo:
             nextVideoPlayer?.pause()
             nextVideoPlayer = nil
-            nextImage = await imageLoader.loadImage(for: nextItem.url, rotationDegrees: nextItem.rotationDegrees)
+            // Use MediaItem-based method to support both filesystem and Photos Library
+            nextImage = await imageLoader.loadImage(for: nextItem)
 
-            let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem.url) ?? []
+            let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem) ?? []
             let rotatedFaces = Self.rotateVisionRects(faces, degrees: nextItem.rotationDegrees)
             nextFaceBoxes = rotatedFaces
             nextEndOffset = Self.faceTargetOffset(from: rotatedFaces)
@@ -453,9 +454,10 @@ class SlideshowPlayerState: ObservableObject {
         case .photo:
             nextVideoPlayer?.pause()
             nextVideoPlayer = nil
-            nextImage = await imageLoader.loadImage(for: nextItem.url, rotationDegrees: nextItem.rotationDegrees)
+            // Use MediaItem-based method to support both filesystem and Photos Library
+            nextImage = await imageLoader.loadImage(for: nextItem)
 
-            let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem.url) ?? []
+            let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem) ?? []
             let rotatedFaces = Self.rotateVisionRects(faces, degrees: nextItem.rotationDegrees)
             nextFaceBoxes = rotatedFaces
             nextEndOffset = Self.faceTargetOffset(from: rotatedFaces)
