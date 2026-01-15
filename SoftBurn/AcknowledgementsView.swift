@@ -10,11 +10,7 @@ struct AcknowledgementsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Acknowledgements")
                 .font(.title2.weight(.semibold))
-
-      //      Text("Placeholder text — put licenses / credits here.")
                 .foregroundStyle(.secondary)
-
-        //    Divider()
 
             ScrollView {
                 Text(

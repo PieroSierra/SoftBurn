@@ -103,38 +103,41 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 600)
         .toolbar {
             if #available(macOS 26.0, *) {
-                // Leading controls - disabled when viewer is open
+                // Left side: single action group (Add, Open, Save)
                 ToolbarItemGroup(placement: .navigation) {
-                    Button(action: {
-                        importMode = .photos
-                        isImporting = true
-                    }) {
-                        Label("Add Media", systemImage: "plus")
-                    }
-                    .help("Add media")
-                    .disabled(isShowingViewer)
-
-                    Button(action: {
-                        Task {
-                            let status = await PhotosLibraryManager.shared.requestAuthorization()
-                            print("📸 Authorization status: \(status)")
-                            if status {
-                                isImportingFromPhotos = true
-                            } else {
-                                print("📸 Authorization denied")
+                    Menu {
+                        Button(action: {
+                            Task {
+                                let status = await PhotosLibraryManager.shared.requestAuthorization()
+                                print("📸 Authorization status: \(status)")
+                                if status {
+                                    isImportingFromPhotos = true
+                                } else {
+                                    print("📸 Authorization denied")
+                                }
                             }
+                        }) {
+                            Label("From Photos Library...", systemImage: "photo.on.rectangle")
                         }
-                    }) {
-                        Label("Add from Photos", systemImage: "photo.on.rectangle")
+
+                        Button(action: {
+                            importMode = .photos
+                            isImporting = true
+                        }) {
+                            Label("From Files...", systemImage: "doc")
+                        }
+                    } label: {
+                        Label("Add", systemImage: "plus")
                     }
-                    .help("Add from Photos Library")
+                    .labelStyle(.titleAndIcon)
+                    .help("Add media")
                     .disabled(isShowingViewer)
 
                     Button(action: {
                         importMode = .slideshow
                         isImporting = true
                     }) {
-                        Label("Open", systemImage: "folder")
+                        Image(systemName: "folder")
                     }
                     .help("Open slideshow")
                     .disabled(isShowingViewer)
@@ -142,9 +145,9 @@ struct ContentView: View {
                     Button(action: {
                         beginSave()
                     }) {
-                        Label("Save", systemImage: "square.and.arrow.down")
+                        Image(systemName: "square.and.arrow.down")
                     }
-                    .help("Save")
+                    .help("Save slideshow")
                     .disabled(slideshowState.isEmpty || isShowingViewer)
                 }
 
@@ -478,19 +481,38 @@ struct ContentView: View {
     
     private var toolbar: some View {
         HStack {
-            // Left side buttons - disabled when viewer is open
+            // Left side: single action group (Add, Open, Save)
             HStack(spacing: 12) {
-                Button(action: {
-                    importMode = .photos
-                    isImporting = true
-                }) {
-                    Image(systemName: "plus")
-                        .frame(width: 20, height: 20)
-                    Text("Add Media")
+                Menu {
+                    Button(action: {
+                        Task {
+                            let status = await PhotosLibraryManager.shared.requestAuthorization()
+                            print("📸 Authorization status: \(status)")
+                            if status {
+                                isImportingFromPhotos = true
+                            } else {
+                                print("📸 Authorization denied")
+                            }
+                        }
+                    }) {
+                        Label("From Photos Library...", systemImage: "photo.on.rectangle")
+                    }
+
+                    Button(action: {
+                        importMode = .photos
+                        isImporting = true
+                    }) {
+                        Label("From Files...", systemImage: "doc")
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                            .frame(width: 20, height: 20)
+                        Text("Add")
+                    }
                 }
                 .help("Add media")
                 .disabled(isShowingViewer)
-
 
                 Button(action: {
                     importMode = .slideshow
@@ -498,7 +520,6 @@ struct ContentView: View {
                 }) {
                     Image(systemName: "folder")
                         .frame(width: 20, height: 20)
-                    Text("Open")
                 }
                 .help("Open slideshow")
                 .disabled(isShowingViewer)
@@ -508,9 +529,8 @@ struct ContentView: View {
                 }) {
                     Image(systemName: "square.and.arrow.down")
                         .frame(width: 20, height: 20)
-                    Text("Save")
                 }
-                .help("Save")
+                .help("Save slideshow")
                 .disabled(slideshowState.isEmpty || isShowingViewer)
 
             }
