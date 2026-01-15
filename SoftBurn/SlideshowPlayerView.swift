@@ -353,7 +353,6 @@ class SlideshowPlayerState: ObservableObject {
                 currentVideoPlayer = makePlayer(url: url, shouldAutoPlay: true)
                 installVideoEndObserver(for: currentVideoPlayer, slot: .current)
             } else {
-                print("📸 Failed to get playable URL for current video")
                 currentVideoPlayer = nil
             }
         }
@@ -376,7 +375,6 @@ class SlideshowPlayerState: ObservableObject {
                 nextVideoPlayer = makePlayer(url: url, shouldAutoPlay: false)
                 installVideoEndObserver(for: nextVideoPlayer, slot: .next)
             } else {
-                print("📸 Failed to get playable URL for next video")
                 nextVideoPlayer = nil
             }
         }
@@ -479,7 +477,6 @@ class SlideshowPlayerState: ObservableObject {
                 nextVideoPlayer = makePlayer(url: url, shouldAutoPlay: false)
                 installVideoEndObserver(for: nextVideoPlayer, slot: .next)
             } else {
-                print("📸 Failed to get playable URL for next video")
                 nextVideoPlayer = nil
             }
         }
@@ -502,7 +499,6 @@ class SlideshowPlayerState: ObservableObject {
     private func makePlayer(url: URL, shouldAutoPlay: Bool) -> AVPlayer {
         // Start accessing security-scoped resource (important for Photos Library URLs)
         let didStartAccess = url.startAccessingSecurityScopedResource()
-        print("📸 Video: Started security-scoped access: \(didStartAccess) for \(url.lastPathComponent)")
 
         // Note: We don't stop access here because the player needs ongoing access
         // The URL will be released when the player is deallocated

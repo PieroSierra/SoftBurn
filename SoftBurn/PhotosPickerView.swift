@@ -39,7 +39,6 @@ struct PhotosPickerView: NSViewControllerRepresentable {
         }
 
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-            print("📸 Picker finished with \(results.count) results")
 
             // Convert results to PHAssets
             var assets: [PHAsset] = []
@@ -47,20 +46,15 @@ struct PhotosPickerView: NSViewControllerRepresentable {
             for result in results {
                 // Get the asset identifier
                 if let assetIdentifier = result.assetIdentifier {
-                    print("📸 Processing asset: \(assetIdentifier)")
                     let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [assetIdentifier], options: nil)
                     if let asset = fetchResult.firstObject {
                         assets.append(asset)
-                        print("📸 Successfully fetched asset")
                     } else {
-                        print("📸 Failed to fetch asset")
                     }
                 } else {
-                    print("📸 No asset identifier in result")
                 }
             }
 
-            print("📸 Total assets converted: \(assets.count)")
 
             // Call selection handler
             parent.onSelection(assets)

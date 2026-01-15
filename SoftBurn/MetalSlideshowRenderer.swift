@@ -317,26 +317,22 @@ final class MetalSlideshowRenderer {
     private func loadTextureFromPhotosLibrary(localIdentifier: String) -> MTLTexture? {
         // Check cache first
         if let cached = photosLibraryTextureCache[localIdentifier] {
-            print("📸 Metal: Cache hit for \(localIdentifier)")
             return cached
         }
 
         // If already loading, return nil (will be available next frame)
         if photosLibraryLoadingSet.contains(localIdentifier) {
-            print("📸 Metal: Already loading \(localIdentifier)")
             return nil
         }
 
         // Mark as loading
         photosLibraryLoadingSet.insert(localIdentifier)
-        print("📸 Metal: Starting async load for \(localIdentifier)")
 
         // Start async load (don't block!)
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
 
             if let cgImage = await PhotosLibraryImageLoader.shared.loadFullResolutionCGImage(localIdentifier: localIdentifier) {
-                print("📸 Metal: Got CGImage: \(cgImage.width)x\(cgImage.height)")
 
                 let loader = MTKTextureLoader(device: self.device)
                 do {
@@ -347,23 +343,19 @@ final class MetalSlideshowRenderer {
                         MTKTextureLoader.Option.textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue),
                     ])
 
-                    print("📸 Metal: Created texture: \(texture.width)x\(texture.height)")
 
                     // Store in cache (must be on main thread to avoid race conditions)
                     await MainActor.run { [weak self] in
                         guard let self else { return }
                         self.photosLibraryTextureCache[localIdentifier] = texture
                         self.photosLibraryLoadingSet.remove(localIdentifier)
-                        print("📸 Metal: Cached texture for \(localIdentifier)")
                     }
                 } catch {
-                    print("📸 Metal: Error creating texture: \(error)")
                     await MainActor.run { [weak self] in
                         self?.photosLibraryLoadingSet.remove(localIdentifier)
                     }
                 }
             } else {
-                print("📸 Metal: Failed to load CGImage")
                 await MainActor.run { [weak self] in
                     self?.photosLibraryLoadingSet.remove(localIdentifier)
                 }
@@ -371,7 +363,6 @@ final class MetalSlideshowRenderer {
         }
 
         // Return nil immediately - texture will be available next frame
-        print("📸 Metal: Returning nil (loading async)")
         return nil
     }
 

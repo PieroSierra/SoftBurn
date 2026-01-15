@@ -109,11 +109,9 @@ struct ContentView: View {
                         Button(action: {
                             Task {
                                 let status = await PhotosLibraryManager.shared.requestAuthorization()
-                                print("📸 Authorization status: \(status)")
                                 if status {
                                     isImportingFromPhotos = true
                                 } else {
-                                    print("📸 Authorization denied")
                                 }
                             }
                         }) {
@@ -487,11 +485,9 @@ struct ContentView: View {
                     Button(action: {
                         Task {
                             let status = await PhotosLibraryManager.shared.requestAuthorization()
-                            print("📸 Authorization status: \(status)")
                             if status {
                                 isImportingFromPhotos = true
                             } else {
-                                print("📸 Authorization denied")
                             }
                         }
                     }) {
@@ -722,11 +718,8 @@ struct ContentView: View {
 
     @MainActor
     private func handlePhotosLibrarySelection(_ assets: [PHAsset]) {
-        print("📸 Photos selected: \(assets.count)")
         let mediaItems = PhotosLibraryManager.shared.createMediaItems(from: assets)
-        print("📸 Media items created: \(mediaItems.count)")
         slideshowState.addPhotos(mediaItems)
-        print("📸 Total photos in slideshow: \(slideshowState.photoCount)")
         session.markDirty()
         isImportingFromPhotos = false
     }

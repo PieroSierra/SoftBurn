@@ -50,33 +50,25 @@ actor ThumbnailCache {
     /// Generate or retrieve a thumbnail for a MediaItem
     func thumbnail(for item: MediaItem) async -> NSImage? {
         let key = Key(from: item)
-        print("📸 ThumbnailCache: Requesting thumbnail for \(item.id)")
-        print("📸 ThumbnailCache: Key source = \(key.source)")
 
         // Check cache first
         if let cached = cache[key] {
-            print("📸 ThumbnailCache: Cache hit!")
             return cached
         }
 
-        print("📸 ThumbnailCache: Cache miss, generating...")
 
         // Generate thumbnail based on source
         let image: NSImage?
         switch item.source {
         case .filesystem(let url):
-            print("📸 ThumbnailCache: Loading from filesystem: \(url.path)")
             image = await generateThumbnail(for: url, rotationDegrees: item.rotationDegrees)
         case .photosLibrary(let localID, _):
-            print("📸 ThumbnailCache: Loading from Photos Library: \(localID) with rotation \(item.rotationDegrees)")
             image = await generateThumbnailFromPhotosLibrary(localIdentifier: localID, rotationDegrees: item.rotationDegrees)
         }
 
         if let generatedImage = image {
-            print("📸 ThumbnailCache: Successfully generated thumbnail")
             cache[key] = generatedImage
         } else {
-            print("📸 ThumbnailCache: Failed to generate thumbnail")
         }
         return image
     }

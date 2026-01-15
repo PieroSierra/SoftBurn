@@ -113,6 +113,7 @@ SoftBurn/
 - [x] Image rotation
 - [x] Enable Metal render pipeline.
   - [ ] Unify Render pipelines (when 100% done)
+  - [ ] Export to Video (only when unified)
 - [x] Basic Multi-monitor support
   - [ ] Project on **all** monitors 
 - [x] Photo App support
@@ -120,7 +121,6 @@ SoftBurn/
   - [ ] Improve tearing
   - [ ] Increase chromatic abberration
 - [ ] Photo Album style (multi-photos dynamic templates)
-- [ ] Export to video
 - [ ] Localisation
 
 ## Contributing
@@ -132,7 +132,7 @@ Contributions are welcome! Please:
 3. Follow Swift concurrency best practices (@MainActor isolation)
 4. Test on multiple macOS versions if changing UI
 
-## License
+# 
 
 ## License
 

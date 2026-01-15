@@ -59,34 +59,26 @@ actor PlaybackImageLoader {
     /// Load an image for playback from MediaItem
     func loadImage(for item: MediaItem) async -> NSImage? {
         let key = Key(from: item)
-        print("📸 PlaybackImageLoader: Loading image for item \(item.id)")
-        print("📸 PlaybackImageLoader: Key = \(key)")
 
         // Check cache first
         if let cached = imageCache[key] {
-            print("📸 PlaybackImageLoader: Cache hit!")
             return cached
         }
 
-        print("📸 PlaybackImageLoader: Cache miss, loading...")
 
         // Load based on source
         let image: NSImage?
         switch item.source {
         case .filesystem(let url):
-            print("📸 PlaybackImageLoader: Loading from filesystem")
             image = await loadFromDisk(url: url, rotationDegrees: item.rotationDegrees)
         case .photosLibrary(let localID, _):
-            print("📸 PlaybackImageLoader: Loading from Photos Library: \(localID)")
             image = await loadFromPhotosLibrary(localIdentifier: localID, rotationDegrees: item.rotationDegrees)
         }
 
         guard let loadedImage = image else {
-            print("📸 PlaybackImageLoader: Failed to load image")
             return nil
         }
 
-        print("📸 PlaybackImageLoader: Successfully loaded image: \(loadedImage.size)")
 
         // Cache the image
         imageCache[key] = loadedImage

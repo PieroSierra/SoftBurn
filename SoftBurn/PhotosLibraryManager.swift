@@ -26,23 +26,16 @@ final class PhotosLibraryManager: ObservableObject {
     /// Request authorization to access Photos Library
     func requestAuthorization() async -> Bool {
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-        print("📸 PHPhotoLibrary authorization result: \(status.rawValue)")
         self.authorizationStatus = status
 
         // Log what status we got
         switch status {
         case .authorized:
-            print("📸 Authorization: authorized")
         case .denied:
-            print("📸 Authorization: denied")
         case .notDetermined:
-            print("📸 Authorization: notDetermined")
         case .restricted:
-            print("📸 Authorization: restricted")
         case .limited:
-            print("📸 Authorization: limited")
         @unknown default:
-            print("📸 Authorization: unknown")
         }
 
         return status == .authorized || status == .limited
