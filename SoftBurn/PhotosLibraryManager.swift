@@ -27,17 +27,6 @@ final class PhotosLibraryManager: ObservableObject {
     func requestAuthorization() async -> Bool {
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         self.authorizationStatus = status
-
-        // Log what status we got
-        switch status {
-        case .authorized:
-        case .denied:
-        case .notDetermined:
-        case .restricted:
-        case .limited:
-        @unknown default:
-        }
-
         return status == .authorized || status == .limited
     }
 

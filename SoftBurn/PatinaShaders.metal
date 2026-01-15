@@ -252,11 +252,29 @@ float3 applyAgedFilm(texture2d<float> tex, sampler s, float2 uv, float time, flo
     float3 result = base + grain * p.grainIntensity;
     
     // Very subtle brightness drift over time (slow sine wave)
-    // Gentle drift + very occasional dim (projector breathing), still subtle.
+    // Gentle drift + irregular dim pulses with occasional flashes
     float brightnessDrift = sin(time * p.driftSpeed) * p.driftIntensity;
-    float dimPulse = smoothstep(p.dimPulseThreshold, 1.0, valueNoise(float2(time * p.dimPulseSpeed, seed))) * p.dimPulseIntensity;
+
+    // Irregular dimPulse: combine multiple noise frequencies for non-uniform breathing
+    float slowPulse = valueNoise(float2(time * p.dimPulseSpeed * 0.3, seed));
+    float mediumPulse = valueNoise(float2(time * p.dimPulseSpeed * 0.8, seed + 17.3));
+    float fastPulse = valueNoise(float2(time * p.dimPulseSpeed * 2.1, seed + 42.7));
+
+    // Combine octaves with different weights for irregular pattern
+    float irregularNoise = slowPulse * 0.5 + mediumPulse * 0.3 + fastPulse * 0.2;
+
+    // Occasional sharp flashes: use a separate high-threshold gate
+    float flashGate = hash12(float2(floor(time * p.dimPulseSpeed * 1.3), seed + 88.4));
+    float flashTrigger = step(0.97, flashGate); // Flash happens ~3% of the time
+    float flashIntensity = hash12(float2(time * 100.0, seed + 123.0)) * 0.5 + 0.5; // 0.5 to 1.0
+    float flashValue = flashTrigger * flashIntensity * abs(p.dimPulseIntensity) * 3.0; // Stronger flash
+
+    // Base dim pulse (can be negative for dimming or positive for brightening)
+    float dimPulse = smoothstep(p.dimPulseThreshold, 1.0, irregularNoise) * p.dimPulseIntensity;
+
     result += brightnessDrift;
     result += dimPulse;
+    result += flashValue; // Add occasional bright flashes
     
     // Mild highlight softening
     float luminance = dot(result, float3(0.299, 0.587, 0.114));

@@ -117,9 +117,10 @@ SoftBurn/
 - [x] Basic Multi-monitor support
   - [ ] Project on **all** monitors 
 - [x] Photo App support
-- [ ] Tweak VHS and Patina effects
-  - [ ] Improve tearing
-  - [ ] Increase chromatic abberration
+- [x] Tweak VHS and Aged Film
+  - [x] Improve tearing
+  - [x] Increase chromatic abberration
+  - [x] Add brightness flashing to Aged Film
 - [ ] Photo Album style (multi-photos dynamic templates)
 - [ ] Localisation
 

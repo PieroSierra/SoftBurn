@@ -77,21 +77,21 @@ struct Patina35mmTuning: Codable {
 // MARK: - Aged Film
 
 struct PatinaAgedFilmTuning: Codable {
-    var grainFineness: Float = 390    // 250..1000
-    var grainIntensity: Float = 0.055 // 0..0.12
-    var blurRadiusTexels: Float = 1.10 // 0..3
+    var grainFineness: Float = 250         // 250..1000
+    var grainIntensity: Float = 0.114215   // 0..0.12
+    var blurRadiusTexels: Float = 2.00512  // 0..3
 
     // Jitter/weave (sub-pixel), in texels
-    var jitterAmplitudeTexels: Float = 1.2 // 0..3
+    var jitterAmplitudeTexels: Float = 2.16752 // 0..3
 
     // Drift / breathing
-    var driftSpeed: Float = 0.25      // 0..1
-    var driftIntensity: Float = 0.012 // 0..0.05
+    var driftSpeed: Float = 0.973222       // 0..1
+    var driftIntensity: Float = 0.029116   // 0..0.05
 
     // Occasional dim pulse
-    var dimPulseSpeed: Float = 0.08       // 0..1
-    var dimPulseThreshold: Float = 0.985  // 0.90..0.999
-    var dimPulseIntensity: Float = -0.010 // -0.06..0
+    var dimPulseSpeed: Float = 0.900508         // 0..1
+    var dimPulseThreshold: Float = 0.985        // 0.90..0.999
+    var dimPulseIntensity: Float = -0.025       // -0.06..0
 
     // Highlight/shadow shaping
     var highlightSoftThreshold: Float = 0.75 // 0.6..0.9
@@ -100,12 +100,12 @@ struct PatinaAgedFilmTuning: Codable {
     var shadowLiftAmount: Float = 0.08       // 0..0.3
 
     // Vignette
-    var vignetteStrength: Float = 0.18 // 0..0.40
-    var vignetteRadius: Float = 0.86   // 0.75..0.95
+    var vignetteStrength: Float = 0.191863 // 0..0.40
+    var vignetteRadius: Float = 0.75       // 0.75..0.95
 
     // Dust
-    var dustRate: Float = 0.0003       // 0..0.01
-    var dustIntensity: Float = 0.15    // 0..0.6
+    var dustRate: Float = 0.00674489       // 0..0.01
+    var dustIntensity: Float = 0.338525    // 0..0.6
 
     static let ranges: [String: PatinaRange] = [
         "grainFineness": .init(min: 250, max: 1000, step: 1),
@@ -132,43 +132,43 @@ struct PatinaAgedFilmTuning: Codable {
 
 struct PatinaVHSTuning: Codable {
     // Horizontal blur taps/weights
-    var blurTap1: Float = 2.0   // 0..8
-    var blurTap2: Float = 4.0   // 0..12
-    var blurW0: Float = 0.45    // 0.2..0.8
-    var blurW1: Float = 0.22    // 0..0.4
-    var blurW2: Float = 0.055   // 0..0.2
+    var blurTap1: Float = 2.0          // 0..8
+    var blurTap2: Float = 4.0          // 0..12
+    var blurW0: Float = 0.45           // 0.2..0.8
+    var blurW1: Float = 0.22           // 0..0.4
+    var blurW2: Float = 0.0848369      // 0..0.2
 
     // Chroma bleed / aberration
-    var chromaOffsetTexels: Float = 2.0 // 0..10
-    var chromaMix: Float = 0.08         // 0..0.30
+    var chromaOffsetTexels: Float = 3.60274 // 0..10
+    var chromaMix: Float = 0.194751         // 0..0.30
 
     // Lines
-    var scanlineBase: Float = 0.96      // 0.7..1.0
-    var scanlineAmp: Float = 0.04       // 0..0.20
-    var scanlinePow: Float = 0.30       // 0.1..2
-    var lineFrequencyScale: Float = 0.75 // 0.4..1.0 (lower = thicker lines)
+    var scanlineBase: Float = 0.96         // 0.7..1.0
+    var scanlineAmp: Float = 0.180328      // 0..0.20
+    var scanlinePow: Float = 1.18387       // 0.1..2
+    var lineFrequencyScale: Float = 0.874821 // 0.4..1.0 (lower = thicker lines)
 
     // Color/tone
-    var desat: Float = 0.80             // 0..1
-    var tintR: Float = 0.97             // 0.8..1.2
+    var desat: Float = 0.80                // 0..1
+    var tintR: Float = 0.97                // 0.8..1.2
     var tintG: Float = 1.00
     var tintB: Float = 1.03
 
     // Tracking/static
-    var trackingThreshold: Float = 0.995 // 0.9..1.0
-    var trackingIntensity: Float = 0.12  // 0..0.5
-    var staticIntensity: Float = 0.025   // 0..0.10
+    var trackingThreshold: Float = 0.995   // 0.9..1.0
+    var trackingIntensity: Float = 0.12    // 0..0.5
+    var staticIntensity: Float = 0.025     // 0..0.10
 
     // Tear line (scan tear)
-    var tearEnabled: Float = 1.0          // 0/1 slider (debug convenience)
-    var tearGateRate: Float = 0.60        // 0..2 (how often to re-roll)
-    var tearGateThreshold: Float = 0.86   // 0.5..0.99 (higher = rarer)
-    var tearSpeed: Float = 0.22           // 0..2 (downward scan speed)
-    var tearBandHeight: Float = 0.010     // 0.001..0.05 (UV)
-    var tearOffsetTexels: Float = 2.0     // 0..10 (horizontal offset)
+    var tearEnabled: Float = 1.0              // 0/1 slider (debug convenience)
+    var tearGateRate: Float = 1.7349          // 0..2 (how often to re-roll)
+    var tearGateThreshold: Float = 0.551752   // 0.5..0.99 (higher = rarer)
+    var tearSpeed: Float = 0.0637713          // 0..2 (downward scan speed)
+    var tearBandHeight: Float = 0.0411877     // 0.001..0.05 (UV)
+    var tearOffsetTexels: Float = 8.76785     // 0..10 (horizontal offset)
 
     // Edge softness
-    var edgeSoftStrength: Float = 0.02   // 0..0.10
+    var edgeSoftStrength: Float = 0.0427662  // 0..0.10
 
     static let ranges: [String: PatinaRange] = [
         "blurTap1": .init(min: 0, max: 8, step: 0.1),
