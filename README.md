@@ -110,13 +110,19 @@ SoftBurn/
 
 ## Roadmap
 
+- [x] Color filters (monocrome, sepia, siltertone)
+- [x] Music playback
+- [x] Single image preview
+- [x] Image rotation
 - [x] Enable Metal render pipeline.
-- [x] Multi-monitor support
+  - [ ] Unify Render pipelines
+- [x] Basic Multi-monitor support
+  - [ ] Project on **all** monitors 
 - [ ] Photo App support
 - [ ] Tweak VHS and Patina effects
   - [ ] Improve tearing
   - [ ] Increase chromatic abberration
-- [ ] Photo Album style
+- [ ] Photo Album style (multi-photos dynamic templates)
 - [ ] Export to video
 - [ ] Localisation
 
@@ -125,7 +131,7 @@ SoftBurn/
 Contributions are welcome! Please:
 
 1. Read [CLAUDE.md](CLAUDE.md) for architecture guidance
-2. Place feature specs in `/specs` before implementing
+2. Place feature specs in [/specs](/specs) before implementing
 3. Follow Swift concurrency best practices (@MainActor isolation)
 4. Test on multiple macOS versions if changing UI
 
