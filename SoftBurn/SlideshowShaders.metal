@@ -18,7 +18,8 @@ struct VertexIn {
 
 struct VertexOut {
     float4 position [[position]];
-    float2 uv;
+    float2 uv;         // rotated UV for texture sampling
+    float2 viewUV;     // original UV for face box checking (view position)
 };
 
 struct LayerUniforms {
@@ -27,7 +28,10 @@ struct LayerUniforms {
     float  opacity;         // 0..1
     int    effectMode;      // 0 none, 1 monochrome, 2 silvertone, 3 sepia
     int    rotationDegrees; // 0, 90, 180, 270 (counterclockwise)
+    int    debugShowFaces;  // 1 to show face boxes, 0 otherwise
+    int    faceBoxCount;    // number of valid face boxes (0-8)
     int    _pad0;           // padding for alignment
+    float4 faceBoxes[8];    // each is (minX, minY, width, height) in Vision space (origin bottom-left)
 };
 
 // MARK: - Helpers (Effects)
@@ -91,7 +95,10 @@ vertex VertexOut slideshowVertexShader(
     p = p * u.scale + u.translate;
     out.position = float4(p, 0.0, 1.0);
 
-    // Apply rotation to UV coordinates (before fragment shader sampling)
+    // Store original UV for face box checking (view position)
+    out.viewUV = vertices[vid].uv;
+
+    // Apply rotation to UV coordinates for texture sampling
     out.uv = rotateUV(vertices[vid].uv, u.rotationDegrees);
 
     return out;
@@ -103,8 +110,33 @@ fragment float4 slideshowFragmentShader(
     constant LayerUniforms& u [[buffer(1)]]
 ) {
     constexpr sampler s(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
-    float4 c = tex.sample(s, in.uv);
+    float4 c = tex.sample(s, in.uv);  // Use rotated UV for texture sampling
     float3 rgb = applyEffect(c.rgb, u.effectMode);
+
+    // Debug: draw face boxes as semi-transparent red overlay
+    if (u.debugShowFaces != 0 && u.faceBoxCount > 0) {
+        // Use viewUV (original, unrotated UV) for face box checking
+        // viewUV is in texture space (origin top-left)
+        // Face boxes are in Vision space (origin bottom-left), already rotated to match view
+        // Convert viewUV to Vision space: visionY = 1.0 - textureY
+        float2 visionUV = float2(in.viewUV.x, 1.0 - in.viewUV.y);
+
+        for (int i = 0; i < u.faceBoxCount && i < 8; i++) {
+            float4 box = u.faceBoxes[i];
+            float minX = box.x;
+            float minY = box.y;
+            float maxX = box.x + box.z;
+            float maxY = box.y + box.w;
+
+            if (visionUV.x >= minX && visionUV.x <= maxX &&
+                visionUV.y >= minY && visionUV.y <= maxY) {
+                // Inside face box - blend with red
+                rgb = mix(rgb, float3(1.0, 0.0, 0.0), 0.4);
+                break;
+            }
+        }
+    }
+
     return float4(rgb, c.a * u.opacity);
 }
 

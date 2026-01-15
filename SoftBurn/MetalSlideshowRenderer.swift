@@ -390,7 +390,12 @@ final class MetalSlideshowRenderer {
         var opacity: Float
         var effectMode: Int32
         var rotationDegrees: Int32  // 0, 90, 180, or 270 (counterclockwise)
+        var debugShowFaces: Int32   // 1 to show face boxes, 0 otherwise
+        var faceBoxCount: Int32     // number of valid face boxes (0-8)
         var _pad0: Int32 = 0        // Padding for 16-byte alignment
+        var faceBoxes: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>,
+                        SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) =
+            (.zero, .zero, .zero, .zero, .zero, .zero, .zero, .zero)
     }
 
     private func writeLayerUniforms(_ u: LayerUniforms, to buffer: MTLBuffer) {
@@ -505,8 +510,10 @@ final class MetalSlideshowRenderer {
         }
 
         // Translation: offsets are normalized relative to view size, so convert to NDC.
+        // Note: NDC Y-axis points UP (+Y = up), but SwiftUI Y-axis points DOWN (+Y = down).
+        // We negate Y to match SwiftUI's offset convention used in faceTargetOffset().
         let tx = Float(offset.width) * 2.0
-        let ty = Float(offset.height) * 2.0
+        let ty = Float(-offset.height) * 2.0
 
         let effectMode: Int32 = {
             switch settings.effect {
@@ -517,12 +524,40 @@ final class MetalSlideshowRenderer {
             }
         }()
 
+        // Face boxes for debug visualization
+        let faceBoxes: [CGRect] = (slot == .current) ? playerState.currentFaceBoxes : playerState.nextFaceBoxes
+        let faceBoxCount = min(8, faceBoxes.count)
+
+        // Convert CGRect array to tuple of SIMD4<Float> (minX, minY, width, height)
+        var boxes: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>,
+                    SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) =
+            (.zero, .zero, .zero, .zero, .zero, .zero, .zero, .zero)
+
+        for i in 0..<faceBoxCount {
+            let r = faceBoxes[i]
+            let v = SIMD4<Float>(Float(r.origin.x), Float(r.origin.y), Float(r.size.width), Float(r.size.height))
+            switch i {
+            case 0: boxes.0 = v
+            case 1: boxes.1 = v
+            case 2: boxes.2 = v
+            case 3: boxes.3 = v
+            case 4: boxes.4 = v
+            case 5: boxes.5 = v
+            case 6: boxes.6 = v
+            case 7: boxes.7 = v
+            default: break
+            }
+        }
+
         return LayerUniforms(
             scale: SIMD2<Float>(baseScaleX * Float(scale), baseScaleY * Float(scale)),
             translate: SIMD2<Float>(tx, ty),
             opacity: Float(opacity),
             effectMode: effectMode,
-            rotationDegrees: Int32(rotation)
+            rotationDegrees: Int32(rotation),
+            debugShowFaces: settings.debugShowFaces ? 1 : 0,
+            faceBoxCount: Int32(faceBoxCount),
+            faceBoxes: boxes
         )
     }
 

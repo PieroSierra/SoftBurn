@@ -625,10 +625,10 @@ struct ContentView: View {
     private func importPhotos(from urls: [URL]) async {
         let photos = await PhotoDiscovery.discoverPhotos(from: urls)
         slideshowState.addPhotos(photos)
-        
+
         // Face detection prefetch (import-time only; never during playback)
         Task.detached(priority: .utility) {
-            await FaceDetectionCache.shared.prefetch(urls: photos.filter { $0.kind == .photo }.map(\.url))
+            await FaceDetectionCache.shared.prefetch(items: photos)
         }
     }
     
@@ -703,10 +703,10 @@ struct ContentView: View {
             
             // Opening a document sets a clean baseline.
             session.markClean()
-            
+
             // Face detection prefetch (open-time only; never during playback)
             Task.detached(priority: .utility) {
-                await FaceDetectionCache.shared.prefetch(urls: photos.filter { $0.kind == .photo }.map(\.url))
+                await FaceDetectionCache.shared.prefetch(items: photos)
             }
             
         } catch {
@@ -722,6 +722,11 @@ struct ContentView: View {
         slideshowState.addPhotos(mediaItems)
         session.markDirty()
         isImportingFromPhotos = false
+
+        // Face detection prefetch for Photos Library items
+        Task.detached(priority: .utility) {
+            await FaceDetectionCache.shared.prefetch(items: mediaItems)
+        }
     }
 
     // MARK: - Save
@@ -735,7 +740,8 @@ struct ContentView: View {
 
         Task { @MainActor in
             // Snapshot any cached face rects we already have (do NOT run detection here).
-            let faceRects = await FaceDetectionCache.shared.snapshotFaceRectsByPath(for: photos.filter { $0.kind == .photo }.map(\.url))
+            // Uses MediaItem-based method to support both filesystem and Photos Library items.
+            let faceRects = await FaceDetectionCache.shared.snapshotFaceRects(for: photos.filter { $0.kind == .photo })
 
             // Create security-scoped bookmarks for each photo so we can reopen across app launches.
             // This is best-effort; missing bookmarks just mean we may need the user to re-select those files later.
