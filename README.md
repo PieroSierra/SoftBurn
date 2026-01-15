@@ -115,10 +115,10 @@ SoftBurn/
 - [x] Single image preview
 - [x] Image rotation
 - [x] Enable Metal render pipeline.
-  - [ ] Unify Render pipelines
+  - [ ] Unify Render pipelines (when 100% done)
 - [x] Basic Multi-monitor support
   - [ ] Project on **all** monitors 
-- [ ] Photo App support
+- [x] Photo App support
 - [ ] Tweak VHS and Patina effects
   - [ ] Improve tearing
   - [ ] Increase chromatic abberration
