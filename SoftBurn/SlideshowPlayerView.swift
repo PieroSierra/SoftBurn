@@ -183,13 +183,16 @@ class SlideshowPlayerState: ObservableObject {
     
     /// Animation progress (0 = start, 1 = end of current slide)
     @Published var animationProgress: Double = 0
-    
+
     /// Whether we're in the transition phase
     @Published var isTransitioning: Bool = false
-    
+
     /// Whether the player has been stopped - prevents any more updates
     @Published private(set) var isStopped: Bool = false
-    
+
+    /// Whether the next video is ready to play (always true for photos)
+    @Published var nextVideoReady: Bool = true
+
     private let imageLoader = PlaybackImageLoader()
     private var slideTimer: Timer?
     private var animationTimer: Timer?
@@ -197,6 +200,11 @@ class SlideshowPlayerState: ObservableObject {
     private var didStartNextVideoThisCycle: Bool = false
     private var currentVideoEndObserver: NSObjectProtocol?
     private var nextVideoEndObserver: NSObjectProtocol?
+    private var nextVideoReadinessObserver: NSKeyValueObservation?
+    private var waitingForVideoStartTime: Date?
+
+    /// Maximum time to wait for a video to be ready before proceeding anyway
+    private static let maxWaitForVideoSeconds: Double = 3.0
     
     /// Total duration for one complete slide cycle (for current item)
     var totalSlideDuration: Double {
@@ -246,13 +254,13 @@ class SlideshowPlayerState: ObservableObject {
         // Mark as stopped FIRST to prevent any pending tasks from updating
         isStopped = true
         isRunning = false
-        
+
         // Invalidate timers synchronously
         slideTimer?.invalidate()
         animationTimer?.invalidate()
         slideTimer = nil
         animationTimer = nil
-        
+
         // Clear images to release GPU resources
         currentImage = nil
         nextImage = nil
@@ -270,8 +278,10 @@ class SlideshowPlayerState: ObservableObject {
         currentStartOffset = .zero
         nextStartOffset = .zero
         didStartNextVideoThisCycle = false
+        nextVideoReady = true
+        waitingForVideoStartTime = nil
         removeVideoObservers()
-        
+
         // Clear the image loader cache (fire and forget - no await needed)
         Task.detached { [imageLoader] in
             await imageLoader.clearCache()
@@ -371,6 +381,8 @@ class SlideshowPlayerState: ObservableObject {
             nextEndOffset = Self.faceTargetOffset(from: rotatedFaces)
         case .video:
             nextImage = nil
+            nextFaceBoxes = []
+            nextEndOffset = .zero
             if let url = await getPlayableURL(for: nextItem) {
                 nextVideoPlayer = makePlayer(url: url, shouldAutoPlay: false)
                 installVideoEndObserver(for: nextVideoPlayer, slot: .next)
@@ -378,6 +390,9 @@ class SlideshowPlayerState: ObservableObject {
                 nextVideoPlayer = nil
             }
         }
+
+        // Set up readiness monitoring for next video
+        observeNextVideoReadiness()
     }
     
     private func startTimers() {
@@ -481,6 +496,9 @@ class SlideshowPlayerState: ObservableObject {
             }
         }
 
+        // Set up readiness monitoring for next video
+        observeNextVideoReadiness()
+
         scheduleNextAdvance()
     }
 
@@ -555,6 +573,43 @@ class SlideshowPlayerState: ObservableObject {
         if let t = nextVideoEndObserver { NotificationCenter.default.removeObserver(t) }
         currentVideoEndObserver = nil
         nextVideoEndObserver = nil
+        nextVideoReadinessObserver?.invalidate()
+        nextVideoReadinessObserver = nil
+    }
+
+    /// Observe next video player's readiness status
+    private func observeNextVideoReadiness() {
+        // Clean up previous observer
+        nextVideoReadinessObserver?.invalidate()
+        nextVideoReadinessObserver = nil
+        waitingForVideoStartTime = nil
+
+        // Photos are always ready
+        if nextKind == .photo {
+            nextVideoReady = true
+            return
+        }
+
+        // Check if video player exists and has an item
+        guard let item = nextVideoPlayer?.currentItem else {
+            nextVideoReady = false
+            return
+        }
+
+        // Check if already ready
+        if item.status == .readyToPlay {
+            nextVideoReady = true
+            return
+        }
+
+        // Not ready yet - observe status changes
+        nextVideoReady = false
+        nextVideoReadinessObserver = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
+            Task { @MainActor [weak self] in
+                guard let self, !self.isStopped else { return }
+                self.nextVideoReady = (observedItem.status == .readyToPlay)
+            }
+        }
     }
 
     private func pauseAndResetVideos() {
@@ -668,23 +723,43 @@ class SlideshowPlayerState: ObservableObject {
     
     private func updateAnimationProgress(deltaTime: Double) {
         guard isRunning, !isStopped else { return }
-        
-        let progressIncrement = deltaTime / totalSlideDuration
-        animationProgress = min(1.0, animationProgress + progressIncrement)
-        
+
         // Update transition state
         if transitionStyle != .plain {
             let transitionStartProgress = currentHoldDuration / totalSlideDuration
-            let willTransition = animationProgress >= transitionStartProgress && animationProgress < 1.0
-            if willTransition, !isTransitioning {
-                // Transition is starting: begin next video playback now (true overlap).
+
+            // Check if we should wait for next video to be ready
+            let shouldStartTransition = animationProgress >= transitionStartProgress && animationProgress < 1.0
+
+            if shouldStartTransition && !isTransitioning {
+                // If next is a video and not ready, pause progress until ready (with timeout)
+                if nextKind == .video && !nextVideoReady {
+                    // Start tracking wait time
+                    if waitingForVideoStartTime == nil {
+                        waitingForVideoStartTime = Date()
+                    }
+                    let waited = Date().timeIntervalSince(waitingForVideoStartTime!)
+                    if waited < Self.maxWaitForVideoSeconds {
+                        // Don't update progress, wait for video to be ready
+                        return
+                    }
+                    // Timeout reached - proceed anyway to prevent infinite wait
+                }
+                // Video is ready (or timed out) - clear wait state and start transition
+                waitingForVideoStartTime = nil
+
+                // Begin next video playback now (true overlap).
                 if nextKind == .video, !didStartNextVideoThisCycle {
                     nextVideoPlayer?.play()
                     didStartNextVideoThisCycle = true
                 }
             }
-            isTransitioning = willTransition
+            isTransitioning = shouldStartTransition
         }
+
+        // Update progress (after potential wait for video)
+        let progressIncrement = deltaTime / totalSlideDuration
+        animationProgress = min(1.0, animationProgress + progressIncrement)
     }
 }
 

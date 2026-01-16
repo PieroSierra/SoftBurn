@@ -112,6 +112,7 @@ SoftBurn/
 - [x] Single image preview
 - [x] Image rotation
 - [x] Enable Metal render pipeline.
+  - [ ] Pre-load next video for performance
   - [ ] Unify Render pipelines (when 100% done)
   - [ ] Export to Video (only when unified)
 - [x] Basic Multi-monitor support
@@ -133,8 +134,12 @@ Contributions are welcome! Please:
 3. Follow Swift concurrency best practices (@MainActor isolation)
 4. Test on multiple macOS versions if changing UI
 
-# 
+ 
 
 ## License
 
 This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
+
+## Privacy
+
+SoftBurn does not collect, store, or share any personal data. See the [Privacy Policy](SoftBurn_Privacy_Policy.html) for details.

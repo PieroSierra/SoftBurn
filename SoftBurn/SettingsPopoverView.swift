@@ -77,7 +77,7 @@ struct SettingsPopoverView: View {
                     }
                 }
                 .labelsHidden()
-                .frame(width: 150, alignment: .leading)
+                .frame(minWidth: 200, alignment: .leading)
             }
             
             // Zoom on Faces (only available with Pan & Zoom)
@@ -134,7 +134,7 @@ struct SettingsPopoverView: View {
                     }
                 }
                 .labelsHidden()
-                .frame(width: 150, alignment: .leading)
+                .frame(minWidth: 200, alignment: .leading)
             }
 
             // Patina (Film/Analog Effects)
@@ -146,21 +146,22 @@ struct SettingsPopoverView: View {
                         }
                     }
                     .labelsHidden()
-                   // .frame(width: 150, alignment: .leading)
+                    
 
 #if DEBUG
                     Button(action: {
                         EffectTuningWindowController.shared.show()
                     }) {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 12))
+                        Image(systemName: "slider.horizontal.2.square")
+                            .font(.system(size: 16))
                     }
                     .buttonStyle(.plain)
                     .help("Effect Settings")
-                    Spacer()
+                 //   Spacer()
 #endif
                 }
             }
+            .frame(minWidth: 200, alignment: .leading)
             
             // Monitor Selection (only visible when external displays exist)
             if showMonitorPicker {
@@ -171,7 +172,7 @@ struct SettingsPopoverView: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 150, alignment: .leading)
+                    .frame(minWidth: 200, alignment: .leading)
                 }
             }
             
@@ -201,7 +202,7 @@ struct SettingsPopoverView: View {
                     }
                 }
                 .labelsHidden()
-                .frame(width: 150, alignment: .leading)
+                .frame(minWidth: 200, alignment: .leading)
             }
             
             // Music Volume (enabled only when music is selected)

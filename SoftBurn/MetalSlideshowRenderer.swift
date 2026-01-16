@@ -416,14 +416,24 @@ final class MetalSlideshowRenderer {
         let viewW = max(1.0, Double(drawableSize.width))
         let viewH = max(1.0, Double(drawableSize.height))
 
-        // Get rotation from PhotoKey (if current/next photo texture)
+        // Get rotation: photos from PhotoKey, videos from VideoTextureSource
         let rotation: Int
-        if slot == .current, let key = currentPhotoKey {
-            rotation = key.rotationDegrees
-        } else if slot == .next, let key = nextPhotoKey {
-            rotation = key.rotationDegrees
-        } else {
-            rotation = 0
+        if slot == .current {
+            if playerState.currentKind == .video {
+                rotation = currentVideoSource.currentRotationDegrees
+            } else if let key = currentPhotoKey {
+                rotation = key.rotationDegrees
+            } else {
+                rotation = 0
+            }
+        } else { // .next
+            if playerState.nextKind == .video {
+                rotation = nextVideoSource.currentRotationDegrees
+            } else if let key = nextPhotoKey {
+                rotation = key.rotationDegrees
+            } else {
+                rotation = 0
+            }
         }
 
         // Swap texture dimensions for 90° and 270° rotations (portrait <-> landscape)
@@ -748,6 +758,9 @@ private final class VideoTextureSource {
     private var lastTexture: MTLTexture?
     private var lastItemTime: CMTime = .invalid
 
+    /// Rotation degrees extracted from video's preferredTransform (0, 90, 180, 270)
+    private(set) var currentRotationDegrees: Int = 0
+
     init(device: MTLDevice) {
         self.device = device
         CVMetalTextureCacheCreate(nil, nil, device, nil, &textureCache)
@@ -760,6 +773,7 @@ private final class VideoTextureSource {
         }
         self.player = player
         self.playerItem = player?.currentItem
+        currentRotationDegrees = 0
 
         guard let item = player?.currentItem else {
             output = nil
@@ -778,6 +792,50 @@ private final class VideoTextureSource {
         output = out
         lastTexture = nil
         lastItemTime = .invalid
+
+        // Load video rotation asynchronously
+        Task { [weak self] in
+            let rotation = await Self.extractRotation(from: item)
+            await MainActor.run {
+                self?.currentRotationDegrees = rotation
+            }
+        }
+    }
+
+    /// Extract rotation degrees from video track's preferredTransform
+    private static func extractRotation(from item: AVPlayerItem) async -> Int {
+        do {
+            let tracks = try await item.asset.loadTracks(withMediaType: .video)
+            guard let track = tracks.first else { return 0 }
+            let transform = try await track.load(.preferredTransform)
+
+            // Determine rotation from transform matrix
+            // atan2(b, a) gives the rotation angle in radians
+            let angle = atan2(transform.b, transform.a)
+            let degrees = Int(round(angle * 180.0 / .pi))
+
+            // Normalize to 0, 90, 180, 270
+            // Note: preferredTransform rotation is typically:
+            // - 90° for portrait (home button right)
+            // - -90° (270°) for portrait upside down (home button left)
+            // - 180° for landscape (home button top)
+            // - 0° for landscape (home button bottom)
+            switch degrees {
+            case -90: return 90    // Portrait: rotate 90° CCW to correct
+            case 90: return 270    // Portrait upside down: rotate 270° CCW
+            case 180, -180: return 180
+            case 0: return 0
+            default:
+                // Snap to nearest 90°
+                let normalized = ((degrees % 360) + 360) % 360
+                if normalized < 45 || normalized >= 315 { return 0 }
+                if normalized < 135 { return 90 }
+                if normalized < 225 { return 180 }
+                return 270
+            }
+        } catch {
+            return 0
+        }
     }
 
     func currentTexture() -> MTLTexture? {

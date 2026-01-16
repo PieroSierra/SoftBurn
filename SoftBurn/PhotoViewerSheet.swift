@@ -272,7 +272,7 @@ struct PhotoViewerSheet: View {
 
         switch item.kind {
         case .photo:
-            let loaded = await loader.load(url: item.url)
+            let loaded = await loader.load(item: item)
             await MainActor.run {
                 self.image = Self.applyRotationForPreview(loaded, degrees: item.rotationDegrees)
                 self.isLoading = false
@@ -282,18 +282,34 @@ struct PhotoViewerSheet: View {
                 self.image = nil
             }
 
+            // Get the actual video URL (handles both filesystem and Photos Library)
+            let videoURL: URL?
+            switch item.source {
+            case .filesystem(let url):
+                videoURL = url
+            case .photosLibrary(let localID, _):
+                videoURL = await PhotosLibraryImageLoader.shared.getVideoURL(localIdentifier: localID)
+            }
+
+            guard let videoURL else {
+                await MainActor.run {
+                    self.isLoading = false
+                }
+                return
+            }
+
             // Create player on main
             await MainActor.run {
-                let playerItem = AVPlayerItem(url: item.url)
+                let playerItem = AVPlayerItem(url: videoURL)
                 let p = AVPlayer(playerItem: playerItem)
                 p.isMuted = !settings.playVideosWithSound
                 self.player = p
                 installEndObserver(for: playerItem)
                 self.isLoading = false
             }
-            
+
             // Fetch presentation size (for sizing the photo card like photos).
-            let size = await VideoMetadataCache.shared.presentationSize(for: item.url)
+            let size = await VideoMetadataCache.shared.presentationSize(for: videoURL)
             await MainActor.run {
                 self.videoPresentationSize = size
             }
