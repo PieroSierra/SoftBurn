@@ -179,22 +179,22 @@ final class MetalSlideshowRenderer {
         }
 
         // Wire video outputs if the players changed.
-        if let p = playerState.currentVideoPlayer {
-            let id = ObjectIdentifier(p)
+        if let loopingPlayer = playerState.currentVideo {
+            let id = ObjectIdentifier(loopingPlayer)
             if currentVideoPlayerID != id {
                 currentVideoPlayerID = id
-                currentVideoSource.setPlayer(p)
+                currentVideoSource.setPlayer(loopingPlayer)
             }
         } else {
             currentVideoPlayerID = nil
             currentVideoSource.setPlayer(nil)
         }
 
-        if let p = playerState.nextVideoPlayer {
-            let id = ObjectIdentifier(p)
+        if let loopingPlayer = playerState.nextVideo {
+            let id = ObjectIdentifier(loopingPlayer)
             if nextVideoPlayerID != id {
                 nextVideoPlayerID = id
-                nextVideoSource.setPlayer(p)
+                nextVideoSource.setPlayer(loopingPlayer)
             }
         } else {
             nextVideoPlayerID = nil
@@ -392,7 +392,7 @@ final class MetalSlideshowRenderer {
         var rotationDegrees: Int32  // 0, 90, 180, or 270 (counterclockwise)
         var debugShowFaces: Int32   // 1 to show face boxes, 0 otherwise
         var faceBoxCount: Int32     // number of valid face boxes (0-8)
-        var _pad0: Int32 = 0        // Padding for 16-byte alignment
+        var isVideoTexture: Int32   // 1 for video (bottom-left origin), 0 for photo (top-left origin)
         var faceBoxes: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>,
                         SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) =
             (.zero, .zero, .zero, .zero, .zero, .zero, .zero, .zero)
@@ -559,6 +559,14 @@ final class MetalSlideshowRenderer {
             }
         }
 
+        // Determine if this is a video texture (bottom-left origin) vs photo (top-left origin)
+        let isVideo: Bool
+        if slot == .current {
+            isVideo = playerState.currentKind == .video
+        } else {
+            isVideo = playerState.nextKind == .video
+        }
+
         return LayerUniforms(
             scale: SIMD2<Float>(baseScaleX * Float(scale), baseScaleY * Float(scale)),
             translate: SIMD2<Float>(tx, ty),
@@ -567,6 +575,7 @@ final class MetalSlideshowRenderer {
             rotationDegrees: Int32(rotation),
             debugShowFaces: settings.debugShowFaces ? 1 : 0,
             faceBoxCount: Int32(faceBoxCount),
+            isVideoTexture: isVideo ? 1 : 0,
             faceBoxes: boxes
         )
     }
@@ -758,24 +767,41 @@ private final class VideoTextureSource {
     private var lastTexture: MTLTexture?
     private var lastItemTime: CMTime = .invalid
 
+    /// 1x1 transparent placeholder texture to avoid black flashes when no frame is available yet
+    private let placeholderTexture: MTLTexture?
+
     /// Rotation degrees extracted from video's preferredTransform (0, 90, 180, 270)
     private(set) var currentRotationDegrees: Int = 0
 
     init(device: MTLDevice) {
         self.device = device
         CVMetalTextureCacheCreate(nil, nil, device, nil, &textureCache)
+
+        // Create 1x1 transparent placeholder to prevent black flashes
+        let desc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm, width: 1, height: 1, mipmapped: false
+        )
+        desc.usage = .shaderRead
+        desc.storageMode = .shared
+        placeholderTexture = device.makeTexture(descriptor: desc)
+        if let tex = placeholderTexture {
+            var pixel: UInt32 = 0x00000000  // Fully transparent black
+            tex.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0,
+                       withBytes: &pixel, bytesPerRow: 4)
+        }
     }
 
-    func setPlayer(_ player: AVPlayer?) {
+    func setPlayer(_ videoPlayer: SoftBurnVideoPlayer?) {
         // Detach from old item
         if let item = playerItem, let output {
             item.remove(output)
         }
-        self.player = player
-        self.playerItem = player?.currentItem
-        currentRotationDegrees = 0
 
-        guard let item = player?.currentItem else {
+        self.player = videoPlayer?.player
+        self.playerItem = videoPlayer?.playerItem
+        currentRotationDegrees = videoPlayer?.rotationDegrees ?? 0
+
+        guard let item = videoPlayer?.playerItem else {
             output = nil
             lastTexture = nil
             lastItemTime = .invalid
@@ -792,71 +818,34 @@ private final class VideoTextureSource {
         output = out
         lastTexture = nil
         lastItemTime = .invalid
-
-        // Load video rotation asynchronously
-        Task { [weak self] in
-            let rotation = await Self.extractRotation(from: item)
-            await MainActor.run {
-                self?.currentRotationDegrees = rotation
-            }
-        }
-    }
-
-    /// Extract rotation degrees from video track's preferredTransform
-    private static func extractRotation(from item: AVPlayerItem) async -> Int {
-        do {
-            let tracks = try await item.asset.loadTracks(withMediaType: .video)
-            guard let track = tracks.first else { return 0 }
-            let transform = try await track.load(.preferredTransform)
-
-            // Determine rotation from transform matrix
-            // atan2(b, a) gives the rotation angle in radians
-            let angle = atan2(transform.b, transform.a)
-            let degrees = Int(round(angle * 180.0 / .pi))
-
-            // Normalize to 0, 90, 180, 270
-            // Note: preferredTransform rotation is typically:
-            // - 90° for portrait (home button right)
-            // - -90° (270°) for portrait upside down (home button left)
-            // - 180° for landscape (home button top)
-            // - 0° for landscape (home button bottom)
-            switch degrees {
-            case -90: return 90    // Portrait: rotate 90° CCW to correct
-            case 90: return 270    // Portrait upside down: rotate 270° CCW
-            case 180, -180: return 180
-            case 0: return 0
-            default:
-                // Snap to nearest 90°
-                let normalized = ((degrees % 360) + 360) % 360
-                if normalized < 45 || normalized >= 315 { return 0 }
-                if normalized < 135 { return 90 }
-                if normalized < 225 { return 180 }
-                return 270
-            }
-        } catch {
-            return 0
-        }
     }
 
     func currentTexture() -> MTLTexture? {
-        guard let output, let item = playerItem, item.status == .readyToPlay else {
-            return lastTexture
+        guard let output else {
+            // No output attached - return last texture or placeholder
+            return lastTexture ?? placeholderTexture
+        }
+
+        guard let item = playerItem, item.status == .readyToPlay else {
+            // Player not ready - return last texture or placeholder
+            return lastTexture ?? placeholderTexture
         }
 
         let hostTime = CACurrentMediaTime()
         let itemTime = output.itemTime(forHostTime: hostTime)
-        guard output.hasNewPixelBuffer(forItemTime: itemTime) else {
-            return lastTexture
-        }
+
+        // Try to get a new pixel buffer even if hasNewPixelBuffer is false
+        // This helps avoid black flashes at video start
         guard let pb = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) else {
-            return lastTexture
+            // No pixel buffer available - return last texture or placeholder
+            return lastTexture ?? placeholderTexture
         }
 
         let w = CVPixelBufferGetWidth(pb)
         let h = CVPixelBufferGetHeight(pb)
-        guard w > 0, h > 0 else { return lastTexture }
+        guard w > 0, h > 0 else { return lastTexture ?? placeholderTexture }
 
-        guard let cache = textureCache else { return lastTexture }
+        guard let cache = textureCache else { return lastTexture ?? placeholderTexture }
         var cvTex: CVMetalTexture?
         let status = CVMetalTextureCacheCreateTextureFromImage(
             nil,
@@ -870,7 +859,7 @@ private final class VideoTextureSource {
             &cvTex
         )
         guard status == kCVReturnSuccess, let cvTex, let tex = CVMetalTextureGetTexture(cvTex) else {
-            return lastTexture
+            return lastTexture ?? placeholderTexture
         }
 
         lastTexture = tex

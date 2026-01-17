@@ -855,7 +855,6 @@ final class MediaThumbnailCellView: NSView {
         wantsLayer = true
 
         backgroundView.wantsLayer = true
-        backgroundView.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
         backgroundView.layer?.cornerRadius = 8
         backgroundView.layer?.shadowColor = NSColor.black.withAlphaComponent(0.10).cgColor
         backgroundView.layer?.shadowOpacity = 1
@@ -926,7 +925,6 @@ final class MediaThumbnailCellView: NSView {
         outerSelectionLayer.lineWidth = 3
 
         innerSelectionLayer.fillColor = nil
-        innerSelectionLayer.strokeColor = NSColor.textBackgroundColor.cgColor
         innerSelectionLayer.lineWidth = 2
 
         // Draw selection ABOVE the thumbnail image, without clipping so the blue stroke can sit around the tile.
@@ -975,6 +973,18 @@ final class MediaThumbnailCellView: NSView {
             selectionOverlay.topAnchor.constraint(equalTo: topAnchor),
             selectionOverlay.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+
+        updateAppearanceColors()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearanceColors()
+    }
+
+    private func updateAppearanceColors() {
+        backgroundView.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        innerSelectionLayer.strokeColor = NSColor.textBackgroundColor.cgColor
     }
 
     override func layout() {

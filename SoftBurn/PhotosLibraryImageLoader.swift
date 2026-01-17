@@ -105,9 +105,11 @@ actor PhotosLibraryImageLoader {
         return await loadNSImage(localIdentifier: localIdentifier, targetSize: PHImageManagerMaximumSize)
     }
 
-    // MARK: - Video URL Loading
+    // MARK: - Video URL Loading (for non-looping playback)
 
-    /// Get playable video URL for Photos Library video asset
+    /// Get video URL for Photos Library video asset.
+    /// Used for single video playback (e.g., PhotoViewerSheet), not slideshow.
+    /// For slideshow playback with looping, use VideoPlayerManager instead.
     func getVideoURL(localIdentifier: String) async -> URL? {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject else {
             return nil
@@ -117,17 +119,14 @@ actor PhotosLibraryImageLoader {
             return nil
         }
 
-
         let options = PHVideoRequestOptions()
         options.isNetworkAccessAllowed = true
         options.deliveryMode = .highQualityFormat
 
         return await withCheckedContinuation { continuation in
-            PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, audioMix, info in
+            PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, info in
                 if let urlAsset = avAsset as? AVURLAsset {
                     continuation.resume(returning: urlAsset.url)
-                } else if let error = info?[PHImageErrorKey] as? Error {
-                    continuation.resume(returning: nil)
                 } else {
                     continuation.resume(returning: nil)
                 }

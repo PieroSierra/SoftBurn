@@ -77,7 +77,8 @@ struct SettingsPopoverView: View {
                     }
                 }
                 .labelsHidden()
-                .frame(minWidth: 200, alignment: .leading)
+                .buttonSizing(.flexible)
+                .frame(width: 130, alignment: .leading)
             }
             
             // Zoom on Faces (only available with Pan & Zoom)
@@ -134,7 +135,8 @@ struct SettingsPopoverView: View {
                     }
                 }
                 .labelsHidden()
-                .frame(minWidth: 200, alignment: .leading)
+                .buttonSizing(.flexible)
+                .frame(width: 130, alignment: .leading)
             }
 
             // Patina (Film/Analog Effects)
@@ -146,9 +148,11 @@ struct SettingsPopoverView: View {
                         }
                     }
                     .labelsHidden()
+                    .buttonSizing(.flexible)
+                    .frame(width: 130, alignment: .leading)
                     
-
 #if DEBUG
+
                     Button(action: {
                         EffectTuningWindowController.shared.show()
                     }) {
@@ -161,7 +165,7 @@ struct SettingsPopoverView: View {
 #endif
                 }
             }
-            .frame(minWidth: 200, alignment: .leading)
+
             
             // Monitor Selection (only visible when external displays exist)
             if showMonitorPicker {
@@ -172,7 +176,8 @@ struct SettingsPopoverView: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(minWidth: 200, alignment: .leading)
+                    .buttonSizing(.flexible)
+                    .frame(width: 130, alignment: .leading)
                 }
             }
             
@@ -202,7 +207,8 @@ struct SettingsPopoverView: View {
                     }
                 }
                 .labelsHidden()
-                .frame(minWidth: 200, alignment: .leading)
+                .buttonSizing(.flexible)
+                .frame(width: 130, alignment: .leading)
             }
             
             // Music Volume (enabled only when music is selected)

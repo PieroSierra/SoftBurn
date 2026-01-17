@@ -30,7 +30,7 @@ struct LayerUniforms {
     int    rotationDegrees; // 0, 90, 180, 270 (counterclockwise)
     int    debugShowFaces;  // 1 to show face boxes, 0 otherwise
     int    faceBoxCount;    // number of valid face boxes (0-8)
-    int    _pad0;           // padding for alignment
+    int    isVideoTexture;  // 1 for video (bottom-left origin), 0 for photo (top-left origin)
     float4 faceBoxes[8];    // each is (minX, minY, width, height) in Vision space (origin bottom-left)
 };
 
@@ -66,20 +66,26 @@ static inline float3 applyEffect(float3 rgb, int mode) {
 
 /// Rotate UV coordinates counterclockwise by 90-degree multiples.
 /// Uses swizzling/inversion for efficient rotation without trigonometry.
-static inline float2 rotateUV(float2 uv, int degrees) {
+/// Video textures have bottom-left origin (from CVPixelBuffer), while photo textures
+/// have top-left origin. The isVideo flag normalizes video UVs before rotation.
+static inline float2 rotateUV(float2 uv, int degrees, int isVideo) {
+    // Video textures have bottom-left origin; photos have top-left origin.
+    // Normalize video to top-left by flipping Y before applying rotation.
+    float2 adjustedUV = isVideo ? float2(uv.x, 1.0 - uv.y) : uv;
+
     switch (degrees) {
         case 90:
             // Counterclockwise 90°: (u,v) -> (1-v, u)
-            return float2(1.0 - uv.y, uv.x);
+            return float2(1.0 - adjustedUV.y, adjustedUV.x);
         case 180:
             // 180°: (u,v) -> (1-u, 1-v)
-            return float2(1.0 - uv.x, 1.0 - uv.y);
+            return float2(1.0 - adjustedUV.x, 1.0 - adjustedUV.y);
         case 270:
             // Counterclockwise 270° (= clockwise 90°): (u,v) -> (v, 1-u)
-            return float2(uv.y, 1.0 - uv.x);
+            return float2(adjustedUV.y, 1.0 - adjustedUV.x);
         default:
             // 0° or invalid: no rotation
-            return uv;
+            return adjustedUV;
     }
 }
 
@@ -99,7 +105,8 @@ vertex VertexOut slideshowVertexShader(
     out.viewUV = vertices[vid].uv;
 
     // Apply rotation to UV coordinates for texture sampling
-    out.uv = rotateUV(vertices[vid].uv, u.rotationDegrees);
+    // Pass isVideoTexture to handle video's bottom-left origin vs photo's top-left origin
+    out.uv = rotateUV(vertices[vid].uv, u.rotationDegrees, u.isVideoTexture);
 
     return out;
 }
