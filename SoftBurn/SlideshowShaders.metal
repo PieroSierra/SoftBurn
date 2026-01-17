@@ -66,26 +66,26 @@ static inline float3 applyEffect(float3 rgb, int mode) {
 
 /// Rotate UV coordinates counterclockwise by 90-degree multiples.
 /// Uses swizzling/inversion for efficient rotation without trigonometry.
-/// Video textures have bottom-left origin (from CVPixelBuffer), while photo textures
-/// have top-left origin. The isVideo flag normalizes video UVs before rotation.
+/// Note: Both photo textures (from MTKTextureLoader) and video textures
+/// (from CVPixelBuffer via CVMetalTextureCache) use top-left origin in Metal.
 static inline float2 rotateUV(float2 uv, int degrees, int isVideo) {
-    // Video textures have bottom-left origin; photos have top-left origin.
-    // Normalize video to top-left by flipping Y before applying rotation.
-    float2 adjustedUV = isVideo ? float2(uv.x, 1.0 - uv.y) : uv;
+    // Both photos and videos use top-left origin in Metal.
+    // The isVideo parameter is kept for potential future use but not used for origin adjustment.
+    (void)isVideo;  // Suppress unused parameter warning
 
     switch (degrees) {
         case 90:
             // Counterclockwise 90°: (u,v) -> (1-v, u)
-            return float2(1.0 - adjustedUV.y, adjustedUV.x);
+            return float2(1.0 - uv.y, uv.x);
         case 180:
             // 180°: (u,v) -> (1-u, 1-v)
-            return float2(1.0 - adjustedUV.x, 1.0 - adjustedUV.y);
+            return float2(1.0 - uv.x, 1.0 - uv.y);
         case 270:
             // Counterclockwise 270° (= clockwise 90°): (u,v) -> (v, 1-u)
-            return float2(adjustedUV.y, 1.0 - adjustedUV.x);
+            return float2(uv.y, 1.0 - uv.x);
         default:
             // 0° or invalid: no rotation
-            return adjustedUV;
+            return uv;
     }
 }
 

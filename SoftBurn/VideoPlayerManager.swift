@@ -277,6 +277,126 @@ actor VideoPlayerManager {
         }
     }
 
+    /// Create a pooled video player for a MediaItem (uses VideoPlayerPool for reuse)
+    /// - Parameters:
+    ///   - item: The media item (must be a video)
+    ///   - muted: Whether to mute audio
+    /// - Returns: A configured PooledVideoPlayer, or nil if creation failed
+    @MainActor
+    func createPooledPlayer(for item: MediaItem, muted: Bool) async -> PooledVideoPlayer? {
+        guard item.kind == .video else {
+            VideoDebugLogger.log("createPooledPlayer: item is not a video")
+            return nil
+        }
+
+        switch item.source {
+        case let .filesystem(url):
+            return await createPooledFromFilesystem(url: url, muted: muted)
+        case let .photosLibrary(localID, _):
+            return await createPooledFromPhotosLibrary(localIdentifier: localID, muted: muted)
+        }
+    }
+
+    // MARK: - Pooled Player Creation
+
+    @MainActor
+    private func createPooledFromFilesystem(url: URL, muted: Bool) async -> PooledVideoPlayer? {
+        VideoDebugLogger.log("Creating pooled player from filesystem: \(url.lastPathComponent)")
+
+        // Acquire a player from the pool
+        guard let pooledPlayer = await VideoPlayerPool.shared.acquire() else {
+            VideoDebugLogger.log("Failed to acquire player from pool")
+            return nil
+        }
+
+        // Start security-scoped access
+        let didStart = url.startAccessingSecurityScopedResource()
+        VideoDebugLogger.log("Security-scoped access started: \(didStart)")
+
+        let asset = AVURLAsset(url: url)
+
+        do {
+            try await VideoPlayerPool.shared.configure(
+                pooledPlayer,
+                with: asset,
+                muted: muted,
+                securityScopedURL: didStart ? url : nil
+            )
+            VideoDebugLogger.log("Pooled filesystem player configured successfully")
+            return PooledVideoPlayer(pooledPlayer: pooledPlayer)
+        } catch {
+            VideoDebugLogger.log("Failed to configure pooled filesystem player: \(error)")
+            if didStart {
+                url.stopAccessingSecurityScopedResource()
+            }
+            await VideoPlayerPool.shared.release(pooledPlayer)
+            return nil
+        }
+    }
+
+    @MainActor
+    private func createPooledFromPhotosLibrary(localIdentifier: String, muted: Bool) async -> PooledVideoPlayer? {
+        VideoDebugLogger.log("Creating pooled player from Photos Library: \(localIdentifier)")
+
+        // Fetch the PHAsset
+        guard
+            let phAsset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
+                .firstObject
+        else {
+            VideoDebugLogger.log("PHAsset not found for identifier")
+            return nil
+        }
+
+        guard phAsset.mediaType == .video else {
+            VideoDebugLogger.log("PHAsset is not a video")
+            return nil
+        }
+
+        // Request the AVAsset from Photos Library
+        let options = PHVideoRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .highQualityFormat
+        options.version = .current
+
+        return await withCheckedContinuation { continuation in
+            PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, info in
+                Task { @MainActor in
+                    guard let avAsset else {
+                        if let error = info?[PHImageErrorKey] as? Error {
+                            VideoDebugLogger.log("Photos Library requestAVAsset failed: \(error)")
+                        } else {
+                            VideoDebugLogger.log("Photos Library requestAVAsset returned nil")
+                        }
+                        continuation.resume(returning: nil)
+                        return
+                    }
+
+                    // Acquire a player from the pool
+                    guard let pooledPlayer = await VideoPlayerPool.shared.acquire() else {
+                        VideoDebugLogger.log("Failed to acquire player from pool for Photos Library video")
+                        continuation.resume(returning: nil)
+                        return
+                    }
+
+                    do {
+                        try await VideoPlayerPool.shared.configure(
+                            pooledPlayer,
+                            with: avAsset,
+                            muted: muted,
+                            securityScopedURL: nil
+                        )
+                        VideoDebugLogger.log("Pooled Photos Library player configured successfully")
+                        continuation.resume(returning: PooledVideoPlayer(pooledPlayer: pooledPlayer))
+                    } catch {
+                        VideoDebugLogger.log("Failed to configure pooled Photos Library player: \(error)")
+                        await VideoPlayerPool.shared.release(pooledPlayer)
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Private Methods
 
     private func createFromFilesystem(url: URL, muted: Bool) async -> SoftBurnVideoPlayer? {

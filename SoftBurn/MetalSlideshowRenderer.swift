@@ -150,22 +150,38 @@ final class MetalSlideshowRenderer {
             let nextIndex = (playerState.currentIndex + 1) % playerState.photos.count
             let nextItem = playerState.photos[nextIndex]
 
+            // Handle current photo texture
             if currentItem.kind == .photo {
                 let key = PhotoKey(from: currentItem)
                 if currentPhotoKey != key || currentPhotoTexture == nil {
-                    currentPhotoTexture = loadPhotoTexture(from: key)
-                    currentPhotoKey = currentPhotoTexture == nil ? nil : key
+                    // Check if we can promote nextPhotoTexture (slide just advanced)
+                    if nextPhotoKey == key, let tex = nextPhotoTexture {
+                        // Promote: next becomes current (avoid flash by reusing already-loaded texture)
+                        currentPhotoTexture = tex
+                        currentPhotoKey = key
+                    } else {
+                        // Load fresh
+                        currentPhotoTexture = loadPhotoTexture(from: key)
+                        currentPhotoKey = currentPhotoTexture == nil ? nil : key
+                    }
                 }
             } else {
                 currentPhotoTexture = nil
                 currentPhotoKey = nil
             }
 
+            // Handle next photo texture
             if nextItem.kind == .photo {
                 let key = PhotoKey(from: nextItem)
                 if nextPhotoKey != key || nextPhotoTexture == nil {
-                    nextPhotoTexture = loadPhotoTexture(from: key)
-                    nextPhotoKey = nextPhotoTexture == nil ? nil : key
+                    // Check if we can demote currentPhotoTexture (if looping back)
+                    if currentPhotoKey == key, let tex = currentPhotoTexture {
+                        nextPhotoTexture = tex
+                        nextPhotoKey = key
+                    } else {
+                        nextPhotoTexture = loadPhotoTexture(from: key)
+                        nextPhotoKey = nextPhotoTexture == nil ? nil : key
+                    }
                 }
             } else {
                 nextPhotoTexture = nil
@@ -179,26 +195,26 @@ final class MetalSlideshowRenderer {
         }
 
         // Wire video outputs if the players changed.
-        if let loopingPlayer = playerState.currentVideo {
-            let id = ObjectIdentifier(loopingPlayer)
+        if let pooledPlayer = playerState.currentVideo {
+            let id = ObjectIdentifier(pooledPlayer)
             if currentVideoPlayerID != id {
                 currentVideoPlayerID = id
-                currentVideoSource.setPlayer(loopingPlayer)
+                currentVideoSource.setPooledPlayer(pooledPlayer)
             }
         } else {
             currentVideoPlayerID = nil
-            currentVideoSource.setPlayer(nil)
+            currentVideoSource.setPooledPlayer(nil)
         }
 
-        if let loopingPlayer = playerState.nextVideo {
-            let id = ObjectIdentifier(loopingPlayer)
+        if let pooledPlayer = playerState.nextVideo {
+            let id = ObjectIdentifier(pooledPlayer)
             if nextVideoPlayerID != id {
                 nextVideoPlayerID = id
-                nextVideoSource.setPlayer(loopingPlayer)
+                nextVideoSource.setPooledPlayer(pooledPlayer)
             }
         } else {
             nextVideoPlayerID = nil
-            nextVideoSource.setPlayer(nil)
+            nextVideoSource.setPooledPlayer(nil)
         }
     }
 
@@ -260,23 +276,60 @@ final class MetalSlideshowRenderer {
             enc.endEncoding()
         }
 
-        // 2) Patina pass: post-process composed sceneTexture -> drawable
-        // Clear black only as a safety default; we overwrite the entire drawable via fullscreen triangle.
-        renderPassDescriptor.colorAttachments[0].loadAction = .clear
-        renderPassDescriptor.colorAttachments[0].storeAction = .store
-        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        // 2) Patina pass (or direct copy when Patina is .none)
+        // When Patina is disabled, we copy the scene texture directly to the drawable.
+        // This unified Metal path eliminates the need for the SwiftUI rendering path.
+        if settings.patina == .none {
+            // Direct blit from scene texture to drawable (no post-processing)
+            blitSceneToDrawable(cb: cb, sceneTexture: sceneTexture, drawable: drawable)
+        } else {
+            // Patina post-processing pass: fullscreen effect on composed sceneTexture -> drawable
+            // Clear black only as a safety default; we overwrite the entire drawable via fullscreen triangle.
+            renderPassDescriptor.colorAttachments[0].loadAction = .clear
+            renderPassDescriptor.colorAttachments[0].storeAction = .store
+            renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
-        if let enc = cb.makeRenderCommandEncoder(descriptor: renderPassDescriptor) {
-            enc.setRenderPipelineState(patinaPipeline)
-            enc.setFragmentTexture(sceneTexture, index: 0)
-            writePatinaUniforms(effect: settings.patina, drawableTexture: drawable.texture)
-            enc.setFragmentBuffer(patinaUniformBuffer, offset: 0, index: 0)
-            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-            enc.endEncoding()
+            if let enc = cb.makeRenderCommandEncoder(descriptor: renderPassDescriptor) {
+                enc.setRenderPipelineState(patinaPipeline)
+                enc.setFragmentTexture(sceneTexture, index: 0)
+
+                // Get current media rotation for VHS effects
+                // During transition, use the current (outgoing) media's rotation
+                let currentRotation: Int
+                if playerState.currentKind == .video {
+                    currentRotation = currentVideoSource.currentRotationDegrees
+                } else if let key = currentPhotoKey {
+                    currentRotation = key.rotationDegrees
+                } else {
+                    currentRotation = 0
+                }
+
+                writePatinaUniforms(effect: settings.patina, drawableTexture: drawable.texture, currentRotation: currentRotation)
+                enc.setFragmentBuffer(patinaUniformBuffer, offset: 0, index: 0)
+                enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                enc.endEncoding()
+            }
         }
 
         cb.present(drawable)
         cb.commit()
+    }
+
+    /// Direct blit from scene texture to drawable when Patina is disabled.
+    /// This avoids the Patina post-processing pass for better performance.
+    private func blitSceneToDrawable(cb: MTLCommandBuffer, sceneTexture: MTLTexture, drawable: CAMetalDrawable) {
+        guard let blitEncoder = cb.makeBlitCommandEncoder() else { return }
+
+        let origin = MTLOrigin(x: 0, y: 0, z: 0)
+        let size = MTLSize(width: min(sceneTexture.width, drawable.texture.width),
+                           height: min(sceneTexture.height, drawable.texture.height),
+                           depth: 1)
+
+        blitEncoder.copy(from: sceneTexture, sourceSlice: 0, sourceLevel: 0,
+                         sourceOrigin: origin, sourceSize: size,
+                         to: drawable.texture, destinationSlice: 0, destinationLevel: 0,
+                         destinationOrigin: origin)
+        blitEncoder.endEncoding()
     }
 
     // MARK: - Textures
@@ -485,7 +538,17 @@ final class MetalSlideshowRenderer {
                 return 0.0
             }
 
-            if !playerState.isTransitioning { return 1.0 }
+            // Calculate transition state directly from animationProgress to avoid race condition
+            // with the isTransitioning flag (which is set asynchronously by the player state timer).
+            // This ensures opacity calculation is consistent with the draw condition.
+            let isInTransition = playerState.animationProgress >= transitionStart && playerState.animationProgress < 1.0
+
+            if !isInTransition {
+                // Not in transition: current at full opacity, next should not be visible
+                return slot == .current ? 1.0 : 0.0
+            }
+
+            // In transition: crossfade based on transition progress
             switch slot {
             case .current: return 1.0 - transitionProgress
             case .next: return transitionProgress
@@ -649,13 +712,13 @@ final class MetalSlideshowRenderer {
         var time: Float
         var resolution: SIMD2<Float>
         var seed: Float
-        var _pad0: Float = 0
+        var currentRotation: Int32  // Current media rotation: 0, 90, 180, 270
         var p35: PatinaParams35mm
         var aged: PatinaParamsAgedFilm
         var vhs: PatinaParamsVHS
     }
 
-    private func writePatinaUniforms(effect: SlideshowDocument.Settings.PatinaEffect, drawableTexture: MTLTexture) {
+    private func writePatinaUniforms(effect: SlideshowDocument.Settings.PatinaEffect, drawableTexture: MTLTexture, currentRotation: Int) {
         let mode: Int32
         switch effect {
         case .none: mode = 0
@@ -730,6 +793,7 @@ final class MetalSlideshowRenderer {
             time: t,
             resolution: SIMD2<Float>(Float(drawableTexture.width), Float(drawableTexture.height)),
             seed: patinaSeed,
+            currentRotation: Int32(currentRotation),
             p35: p35,
             aged: aged,
             vhs: vhs
@@ -808,6 +872,35 @@ private final class VideoTextureSource {
             return
         }
 
+        configureOutput(for: item)
+    }
+
+    func setPooledPlayer(_ videoPlayer: PooledVideoPlayer?) {
+        // Detach from old item
+        if let item = playerItem, let output {
+            item.remove(output)
+        }
+
+        self.player = videoPlayer?.player
+        self.playerItem = videoPlayer?.playerItem
+        currentRotationDegrees = videoPlayer?.rotationDegrees ?? 0
+
+        // Debug: log the rotation being used
+        if let vp = videoPlayer {
+            print("[Video] VideoTextureSource: setPooledPlayer rotation=\(currentRotationDegrees)° (from PooledVideoPlayer.rotationDegrees=\(vp.rotationDegrees))")
+        }
+
+        guard let item = videoPlayer?.playerItem else {
+            output = nil
+            lastTexture = nil
+            lastItemTime = .invalid
+            return
+        }
+
+        configureOutput(for: item)
+    }
+
+    private func configureOutput(for item: AVPlayerItem) {
         let attrs: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
             kCVPixelBufferMetalCompatibilityKey as String: true

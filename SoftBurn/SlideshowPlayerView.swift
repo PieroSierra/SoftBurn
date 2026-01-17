@@ -68,33 +68,14 @@ struct SlideshowPlayerView: View {
             
             // Only render content if not exiting
             if !isExiting {
-                if settings.patina == .none {
-                    // SwiftUI path (no Metal): media + transforms + optional Effects
-                    Group {
-                        switch settings.transitionStyle {
-                        case .plain:
-                            PlainTransitionView(playerState: playerState)
-                        case .crossFade:
-                            CrossFadeTransitionView(playerState: playerState)
-                        case .panAndZoom, .zoom:
-                            PanAndZoomTransitionView(
-                                playerState: playerState,
-                                zoomOnFaces: settings.zoomOnFaces,
-                                debugShowFaces: settings.debugShowFaces
-                            )
-                        }
-                    }
-                    // Effects apply to media content only (not background)
-                    .postProcessingEffect(settings.effect)
-                } else {
-                    // Metal path: media + geometry + effects composited into texture,
-                    // then Patina post-pass, then present.
-                    MetalSlideshowView(
-                        playerState: playerState,
-                        settings: settings
-                    )
-                    .allowsHitTesting(false)
-                }
+                // UNIFIED METAL PIPELINE: Always use Metal for rendering.
+                // When Patina is .none, the MetalSlideshowRenderer will skip the
+                // Patina post-processing pass and blit directly to the drawable.
+                MetalSlideshowView(
+                    playerState: playerState,
+                    settings: settings
+                )
+                .allowsHitTesting(false)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -155,15 +136,15 @@ class SlideshowPlayerState: ObservableObject {
     let transitionStyle: SlideshowDocument.Settings.TransitionStyle
     let playVideosWithSound: Bool
     let playVideosInFull: Bool
-    
+
     /// Fixed transition duration (2 seconds as per spec)
     static let transitionDuration: Double = 2.0
-    
+
     @Published var currentIndex: Int = 0
     @Published var currentImage: NSImage?
     @Published var nextImage: NSImage?
-    @Published var currentVideo: SoftBurnVideoPlayer?
-    @Published var nextVideo: SoftBurnVideoPlayer?
+    @Published var currentVideo: PooledVideoPlayer?
+    @Published var nextVideo: PooledVideoPlayer?
     @Published var currentKind: MediaItem.Kind = .photo
     @Published var nextKind: MediaItem.Kind = .photo
     @Published var currentHoldDuration: Double = 5.0
@@ -246,6 +227,8 @@ class SlideshowPlayerState: ObservableObject {
         didStartNextVideoThisCycle = false
 
         Task { @MainActor in
+            // Warm up the video player pool before starting playback
+            await VideoPlayerPool.shared.warmUp(count: 2)
             await prepareCurrentAndNext()
             startTimers()
         }
@@ -284,6 +267,11 @@ class SlideshowPlayerState: ObservableObject {
         didStartNextVideoThisCycle = false
         nextVideoReady = true
         waitingForVideoStartTime = nil
+
+        // Drain the video player pool
+        Task {
+            await VideoPlayerPool.shared.drain()
+        }
 
         // Clear the image loader cache (fire and forget - no await needed)
         Task.detached { [imageLoader] in
@@ -527,8 +515,9 @@ class SlideshowPlayerState: ObservableObject {
     }
 
     /// Create a video player for a MediaItem and install loop observer
-    private func createVideoPlayer(for item: MediaItem, shouldAutoPlay: Bool) async -> SoftBurnVideoPlayer? {
-        guard let player = await VideoPlayerManager.shared.createPlayer(
+    /// Uses VideoPlayerPool to reuse AVPlayer instances and avoid hardware decoder exhaustion
+    private func createVideoPlayer(for item: MediaItem, shouldAutoPlay: Bool) async -> PooledVideoPlayer? {
+        guard let player = await VideoPlayerManager.shared.createPooledPlayer(
             for: item,
             muted: !playVideosWithSound
         ) else {
@@ -544,10 +533,12 @@ class SlideshowPlayerState: ObservableObject {
     }
 
     /// Install a loop observer for a video player
-    private func installLoopObserver(for videoPlayer: SoftBurnVideoPlayer, isCurrent: Bool) {
+    private func installLoopObserver(for videoPlayer: PooledVideoPlayer, isCurrent: Bool) {
+        guard let playerItem = videoPlayer.playerItem else { return }
+
         let observer = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
-            object: videoPlayer.playerItem,
+            object: playerItem,
             queue: .main
         ) { [weak videoPlayer] _ in
             guard let videoPlayer else { return }
@@ -770,9 +761,10 @@ class SlideshowPlayerState: ObservableObject {
 // Marking it unchecked-sendable avoids noisy warnings for safe usage patterns here.
 extension SlideshowPlayerState: @unchecked Sendable {}
 
-// MARK: - Transition Views
+// MARK: - Transition Views (Deprecated - Use Unified Metal Pipeline)
 
 /// Plain transition: instant replacement, no animation
+/// @available(*, deprecated, message: "Use unified Metal pipeline via MetalSlideshowView")
 struct PlainTransitionView: View {
     @ObservedObject var playerState: SlideshowPlayerState
 
@@ -803,6 +795,7 @@ struct PlainTransitionView: View {
 }
 
 /// Cross-fade transition: true overlap (A fades out while B fades in)
+/// @available(*, deprecated, message: "Use unified Metal pipeline via MetalSlideshowView")
 struct CrossFadeTransitionView: View {
     @ObservedObject var playerState: SlideshowPlayerState
 
@@ -874,6 +867,7 @@ struct CrossFadeTransitionView: View {
 }
 
 /// Ken Burns (Pan & Zoom): both images move continuously, and cross-fade overlaps.
+/// @available(*, deprecated, message: "Use unified Metal pipeline via MetalSlideshowView")
 struct PanAndZoomTransitionView: View {
     @ObservedObject var playerState: SlideshowPlayerState
     let zoomOnFaces: Bool
@@ -1004,8 +998,9 @@ struct PanAndZoomTransitionView: View {
     }
 }
 
-// MARK: - Ken Burns Helpers
+// MARK: - Ken Burns Helpers (Deprecated - Use Unified Metal Pipeline)
 
+/// @available(*, deprecated, message: "Use unified Metal pipeline via MetalSlideshowView")
 private struct KenBurnsImageView: View {
     let image: NSImage
     let startOffset: CGSize
@@ -1061,6 +1056,7 @@ private struct KenBurnsImageView: View {
     }
 }
 
+/// @available(*, deprecated, message: "Use unified Metal pipeline via MetalSlideshowView")
 private struct KenBurnsVideoView: View {
     let player: AVPlayer
     let startOffset: CGSize
@@ -1100,6 +1096,7 @@ private struct KenBurnsVideoView: View {
     }
 }
 
+/// @available(*, deprecated, message: "Use unified Metal pipeline via MetalSlideshowView")
 private struct FaceBoxesOverlay: View {
     let image: NSImage
     let faceBoxes: [CGRect]

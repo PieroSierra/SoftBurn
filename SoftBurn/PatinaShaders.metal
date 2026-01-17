@@ -94,7 +94,7 @@ struct PatinaUniforms {
     float time;         // Time in seconds for animated effects
     float2 resolution;  // Output resolution
     float seed;         // Random seed for grain variation
-    float _pad0;
+    int currentRotation; // Current media rotation: 0, 90, 180, 270
     PatinaParams35mm p35;
     PatinaParamsAgedFilm aged;
     PatinaParamsVHS vhs;
@@ -303,57 +303,111 @@ float3 applyAgedFilm(texture2d<float> tex, sampler s, float2 uv, float time, flo
 
 // MARK: - Effect: VHS
 
+// Helper: Transform UV to logical orientation based on rotation.
+// The scene texture already has the media rotated, but VHS effects need to know
+// the "logical" orientation to apply directional effects correctly.
+// For 90° rotated (portrait) videos, the visual "top" is on the left side of the texture.
+static inline float2 transformUVForRotation(float2 uv, int rotation) {
+    switch (rotation) {
+        case 90:
+            // Portrait video: logical top is on texture left
+            return float2(uv.y, 1.0 - uv.x);
+        case 180:
+            return float2(1.0 - uv.x, 1.0 - uv.y);
+        case 270:
+            // Portrait video (rotated other way): logical top is on texture right
+            return float2(1.0 - uv.y, uv.x);
+        default:
+            return uv;
+    }
+}
+
 // Restrained analog tape look
-float3 applyVHS(texture2d<float> tex, sampler s, float2 uv, float time, float2 resolution, float seed, constant PatinaParamsVHS& p) {
+float3 applyVHS(texture2d<float> tex, sampler s, float2 uv, float time, float2 resolution, float seed, int currentRotation, constant PatinaParamsVHS& p) {
     float2 texelSize = 1.0 / resolution;
 
+    // Transform UV to logical orientation for directional VHS effects.
+    // This ensures tear lines, scanlines, and tracking run "horizontally"
+    // relative to the video's logical orientation, not the screen.
+    float2 logicalUV = transformUVForRotation(uv, currentRotation);
+
+    // For rotated content, determine the logical texel size
+    float2 logicalTexelSize = texelSize;
+    if (currentRotation == 90 || currentRotation == 270) {
+        logicalTexelSize = float2(texelSize.y, texelSize.x); // Swap for portrait
+    }
+
     // Random scan tear line: horizontal rip that scans downward; offsets the top portion.
+    // Uses logical UV so tear runs horizontally relative to video content.
+    float2 workingUV = uv; // Screen-space UV for sampling
     if (p.tearEnabled > 0.5) {
         float gate = valueNoise(float2(floor(time * max(0.001, p.tearGateRate)), seed + 91.0));
         if (gate > p.tearGateThreshold) {
             float tearY = fract(time * max(0.001, p.tearSpeed) + seed * 0.13) * 1.3 - 0.15;
-            float topMask = step(uv.y, tearY); // uv.y=0 is top
-            float offset = p.tearOffsetTexels * texelSize.x;
-            uv.x = saturate(uv.x + offset * topMask);
-            // Optional: brighten the tear band slightly (thin line)
-            float band = smoothstep(tearY - p.tearBandHeight, tearY, uv.y) * (1.0 - smoothstep(tearY, tearY + p.tearBandHeight, uv.y));
-            // We'll apply band later as a multiplicative notch.
+            float topMask = step(logicalUV.y, tearY); // Use logical Y for tear position
+
+            // Apply tear offset in screen space, but direction depends on rotation
+            float offset = p.tearOffsetTexels;
+            if (currentRotation == 0 || currentRotation == 180) {
+                workingUV.x = saturate(workingUV.x + offset * texelSize.x * topMask);
+            } else {
+                // For 90°/270° rotation, tear offset affects screen Y
+                workingUV.y = saturate(workingUV.y + offset * texelSize.y * topMask);
+            }
         }
     }
-    
-    // Mild horizontal softness (horizontal blur) - real sampling, still lightweight.
-    float3 c0 = sampleRGB(tex, s, uv);
-    float3 c1 = sampleRGB(tex, s, uv + float2(texelSize.x * p.blurTap1, 0.0));
-    float3 c_1 = sampleRGB(tex, s, uv - float2(texelSize.x * p.blurTap1, 0.0));
-    float3 c2 = sampleRGB(tex, s, uv + float2(texelSize.x * p.blurTap2, 0.0));
-    float3 c_2 = sampleRGB(tex, s, uv - float2(texelSize.x * p.blurTap2, 0.0));
+
+    // Mild horizontal softness (horizontal blur in logical space)
+    // For rotated content, "horizontal" blur becomes vertical in screen space
+    float2 blurDir = (currentRotation == 90 || currentRotation == 270) ?
+                     float2(0.0, texelSize.y) : float2(texelSize.x, 0.0);
+
+    float3 c0 = sampleRGB(tex, s, workingUV);
+    float3 c1 = sampleRGB(tex, s, workingUV + blurDir * p.blurTap1);
+    float3 c_1 = sampleRGB(tex, s, workingUV - blurDir * p.blurTap1);
+    float3 c2 = sampleRGB(tex, s, workingUV + blurDir * p.blurTap2);
+    float3 c_2 = sampleRGB(tex, s, workingUV - blurDir * p.blurTap2);
     float3 result = (c0 * p.blurW0) + (c1 + c_1) * p.blurW1 + (c2 + c_2) * p.blurW2;
-    
-    // Very light horizontal noise
-    float hNoise = hash12(float2(uv.y * resolution.y, floor(time * 30.0))) * 2.0 - 1.0;
-    float2 offsetUV = uv;
-    offsetUV.x += hNoise * texelSize.x * 0.5;
-    
-    // Subtle chroma bleed (shift color channels slightly)
-    // Chromatic aberration: stronger toward edges.
-    float2 center = uv - 0.5;
+
+    // Very light horizontal noise (in logical space)
+    float hNoise = hash12(float2(logicalUV.y * resolution.y, floor(time * 30.0))) * 2.0 - 1.0;
+    float2 offsetUV = workingUV;
+    if (currentRotation == 90 || currentRotation == 270) {
+        offsetUV.y += hNoise * texelSize.y * 0.5;
+    } else {
+        offsetUV.x += hNoise * texelSize.x * 0.5;
+    }
+
+    // Subtle chroma bleed (shift color channels in logical horizontal direction)
+    float2 center = logicalUV - 0.5;
     float r = length(center) * 2.0;
-    float chromaOffset = texelSize.x * p.chromaOffsetTexels * (0.6 + r * 0.9);
-    float rShift = (hash12(float2(uv.y * 100.0, time)) * 2.0 - 1.0) * chromaOffset;
-    float bShift = (hash12(float2(uv.y * 100.0 + 50.0, time)) * 2.0 - 1.0) * chromaOffset;
-    
-    // Apply subtle color channel separation with horizontal shift
-    float rSample = sampleRGB(tex, s, offsetUV + float2(rShift, 0.0)).r;
-    float bSample = sampleRGB(tex, s, offsetUV - float2(bShift, 0.0)).b;
-    // Chroma bleed should be visible but restrained.
+    float chromaOffset = p.chromaOffsetTexels * (0.6 + r * 0.9);
+
+    float rShift = (hash12(float2(logicalUV.y * 100.0, time)) * 2.0 - 1.0) * chromaOffset;
+    float bShift = (hash12(float2(logicalUV.y * 100.0 + 50.0, time)) * 2.0 - 1.0) * chromaOffset;
+
+    // Apply chroma shift in logical horizontal direction
+    float2 rOffset, bOffset;
+    if (currentRotation == 90 || currentRotation == 270) {
+        rOffset = float2(0.0, rShift * texelSize.y);
+        bOffset = float2(0.0, bShift * texelSize.y);
+    } else {
+        rOffset = float2(rShift * texelSize.x, 0.0);
+        bOffset = float2(bShift * texelSize.x, 0.0);
+    }
+
+    float rSample = sampleRGB(tex, s, offsetUV + rOffset).r;
+    float bSample = sampleRGB(tex, s, offsetUV - bOffset).b;
     result.r = mix(result.r, rSample, p.chromaMix);
     result.b = mix(result.b, bSample, p.chromaMix);
-    
-    // Very light scanline texture
-    float scanline = sin(uv.y * (resolution.y * p.lineFrequencyScale) * PI) * 0.5 + 0.5;
+
+    // Scanlines: run in logical Y direction
+    // For rotated content, scanlines appear vertical in screen space
+    float logicalResY = (currentRotation == 90 || currentRotation == 270) ? resolution.x : resolution.y;
+    float scanline = sin(logicalUV.y * (logicalResY * p.lineFrequencyScale) * PI) * 0.5 + 0.5;
     scanline = pow(scanline, p.scanlinePow);
     result *= p.scanlineBase + scanline * p.scanlineAmp;
-    
+
     // Gentle desaturation
     float luminance = dot(result, float3(0.299, 0.587, 0.114));
     result = mix(float3(luminance), result, p.desat);
@@ -361,20 +415,20 @@ float3 applyVHS(texture2d<float> tex, sampler s, float2 uv, float time, float2 r
     // CRT-ish tint (very light green/blue bias).
     result *= p.tintMultiplyRGBA.xyz;
 
-    // Visual artifacts: subtle horizontal tracking lines + occasional static bursts.
-    float line = floor(uv.y * (resolution.y * p.lineFrequencyScale));
-    float lineNoise = hash12(float2(line, floor(time * 30.0)));
+    // Visual artifacts: horizontal tracking lines in logical space
+    float logicalLine = floor(logicalUV.y * (logicalResY * p.lineFrequencyScale));
+    float lineNoise = hash12(float2(logicalLine, floor(time * 30.0)));
     float tracking = smoothstep(p.trackingThreshold, 1.0, lineNoise);
     result *= 1.0 - tracking * p.trackingIntensity;
 
     // Very light static grain (stronger than film grain).
     float staticG = (hash12(float2(uv * resolution * 0.25 + time * 18.0)) * 2.0 - 1.0) * p.staticIntensity;
     result += staticG;
-    
-    // Very slight edge softening
-    float edgeSoft = 1.0 - smoothstep(0.0, 0.02, uv.x) * (1.0 - smoothstep(0.98, 1.0, uv.x));
+
+    // Edge softening in logical X direction
+    float edgeSoft = 1.0 - smoothstep(0.0, 0.02, logicalUV.x) * (1.0 - smoothstep(0.98, 1.0, logicalUV.x));
     result *= 0.98 + edgeSoft * p.edgeSoftStrength;
-    
+
     return saturate(result);
 }
 
@@ -408,7 +462,7 @@ fragment float4 patinaFragmentShader(VertexOut in [[stage_in]],
             break;
             
         case PATINA_VHS:
-            result = applyVHS(inputTexture, textureSampler, uv, uniforms.time, uniforms.resolution, uniforms.seed, uniforms.vhs);
+            result = applyVHS(inputTexture, textureSampler, uv, uniforms.time, uniforms.resolution, uniforms.seed, uniforms.currentRotation, uniforms.vhs);
             break;
             
         case PATINA_NONE:
