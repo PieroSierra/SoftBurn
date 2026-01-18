@@ -1091,9 +1091,7 @@ final class MediaThumbnailCellView: NSView {
         thumbnailTask?.cancel()
         durationTask?.cancel()
 
-        let url = media.url
         let id = media.id
-        let rotation = (media.kind == .photo) ? media.rotationDegrees : 0
         thumbnailTask = Task {
             // Use MediaItem-based method to support both filesystem and Photos Library
             let thumb = await ThumbnailCache.shared.thumbnail(for: media)

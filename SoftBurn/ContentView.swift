@@ -745,9 +745,10 @@ struct ContentView: View {
 
             // Create security-scoped bookmarks for each photo so we can reopen across app launches.
             // This is best-effort; missing bookmarks just mean we may need the user to re-select those files later.
+            let photoURLs = photos.map(\.url)
             let bookmarksByPath: [String: String] = await Task.detached(priority: .utility) {
                 var result: [String: String] = [:]
-                for url in photos.map(\.url) {
+                for url in photoURLs {
                     // Bookmark creation does NOT prompt; it only succeeds if we already have access.
                     if let data = try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) {
                         result[url.path] = data.base64EncodedString()
