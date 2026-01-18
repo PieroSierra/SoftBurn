@@ -255,14 +255,12 @@ final class MetalSlideshowRenderer {
                 enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             }
 
-            // Draw next (only during active transition: transitionStart <= progress < 1.0)
-            // CRITICAL: Must match the opacity calculation's isInTransition logic (line 544)
-            // to prevent flashing when textures load asynchronously.
+            // Draw next photo during transition AND when animation completes (until advanceSlide promotes slots).
+            // When animationProgress >= 1.0, the "next" photo should be fully visible since current is at 0%.
             let transitionStart = playerState.currentHoldDuration / playerState.totalSlideDuration
-            let isInTransitionWindow = playerState.animationProgress >= transitionStart &&
-                                      playerState.animationProgress < 1.0
-            if playerState.transitionStyle != .plain,
-               isInTransitionWindow,
+            let shouldDrawNext = playerState.transitionStyle != .plain &&
+                                playerState.animationProgress >= transitionStart
+            if shouldDrawNext,
                let tex = textureForSlot(kind: playerState.nextKind, slot: .next) {
                 let u = makeLayerUniforms(
                     mediaTexture: tex,
@@ -538,15 +536,17 @@ final class MetalSlideshowRenderer {
         let opacity: Double = {
             if playerState.transitionStyle == .plain { return 1.0 }
 
-            // Prevent flash: keep current at 0 opacity when animationProgress reaches 1.0
-            if slot == .current && playerState.animationProgress >= 1.0 {
-                return 0.0
+            // When animationProgress >= 1.0 (transition complete, waiting for advanceSlide):
+            // - Current (outgoing) photo: 0% opacity (invisible)
+            // - Next (incoming) photo: 100% opacity (fully visible)
+            // This prevents the hot-pink flash between transition completion and slot promotion.
+            if playerState.animationProgress >= 1.0 {
+                return slot == .current ? 0.0 : 1.0
             }
 
             // Calculate transition state directly from animationProgress to avoid race condition
             // with the isTransitioning flag (which is set asynchronously by the player state timer).
-            // This ensures opacity calculation is consistent with the draw condition.
-            let isInTransition = playerState.animationProgress >= transitionStart && playerState.animationProgress < 1.0
+            let isInTransition = playerState.animationProgress >= transitionStart
 
             if !isInTransition {
                 // Not in transition: current at full opacity, next should not be visible
