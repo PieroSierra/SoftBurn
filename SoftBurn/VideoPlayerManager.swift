@@ -89,7 +89,8 @@ final class SoftBurnVideoPlayer: ObservableObject {
     ///   - asset: The video asset (AVURLAsset or AVComposition)
     ///   - muted: Whether to mute audio
     ///   - securityScopedURL: Optional URL for security-scoped resource access
-    init(asset: AVAsset, muted: Bool, securityScopedURL: URL? = nil) async throws {
+    ///   - isFromPhotosLibrary: True if the asset came from Photos Library (affects rotation handling)
+    init(asset: AVAsset, muted: Bool, securityScopedURL: URL? = nil, isFromPhotosLibrary: Bool = false) async throws {
         self.securityScopedURL = securityScopedURL
 
         VideoDebugLogger.log("VideoPlayer init: starting asset load")
@@ -128,7 +129,18 @@ final class SoftBurnVideoPlayer: ObservableObject {
                 let angle = atan2(preferredTransform.b, preferredTransform.a)
                 let degrees = Int(round(angle * 180 / .pi))
                 // Normalize to 0, 90, 180, 270
-                self.rotationDegrees = ((degrees % 360) + 360) % 360
+                var computedRotation = ((degrees % 360) + 360) % 360
+
+                // Photos Library videos: The preferredTransform is designed for AVFoundation's
+                // coordinate system (Y-down), but CVPixelBuffer textures in Metal use a different
+                // convention. For Photos Library videos, we need to negate the rotation.
+                // This swaps 90° ↔ 270° while leaving 0° and 180° unchanged.
+                if isFromPhotosLibrary && computedRotation != 0 {
+                    computedRotation = (360 - computedRotation) % 360
+                    VideoDebugLogger.log("VideoPlayer init: Photos Library video rotation negated to \(computedRotation)°")
+                }
+
+                self.rotationDegrees = computedRotation
 
                 // Apply rotation to get display size
                 if rotationDegrees == 90 || rotationDegrees == 270 {
@@ -137,7 +149,7 @@ final class SoftBurnVideoPlayer: ObservableObject {
                 } else {
                     self.naturalSize = naturalSizeValue
                 }
-                VideoDebugLogger.log("VideoPlayer init: size=\(naturalSize), rotation=\(rotationDegrees)°")
+                VideoDebugLogger.log("VideoPlayer init: size=\(naturalSize), rotation=\(rotationDegrees)°, isFromPhotosLibrary=\(isFromPhotosLibrary)")
             } catch {
                 self.rotationDegrees = 0
                 self.naturalSize = .zero
@@ -383,7 +395,8 @@ actor VideoPlayerManager {
                             pooledPlayer,
                             with: avAsset,
                             muted: muted,
-                            securityScopedURL: nil
+                            securityScopedURL: nil,
+                            isFromPhotosLibrary: true
                         )
                         VideoDebugLogger.log("Pooled Photos Library player configured successfully")
                         continuation.resume(returning: PooledVideoPlayer(pooledPlayer: pooledPlayer))
@@ -476,7 +489,8 @@ actor VideoPlayerManager {
                         let player = try await SoftBurnVideoPlayer(
                             asset: avAsset,
                             muted: muted,
-                            securityScopedURL: nil
+                            securityScopedURL: nil,
+                            isFromPhotosLibrary: true
                         )
                         VideoDebugLogger.log("Photos Library player created successfully")
                         continuation.resume(returning: player)

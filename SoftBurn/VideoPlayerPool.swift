@@ -168,12 +168,19 @@ actor VideoPlayerPool {
 
     /// Configure a pooled player with a new asset
     /// This reuses the existing decoder session rather than creating a new one
+    /// - Parameters:
+    ///   - player: The pooled player to configure
+    ///   - asset: The video asset (AVURLAsset or AVComposition)
+    ///   - muted: Whether to mute audio
+    ///   - securityScopedURL: Optional URL for security-scoped resource access
+    ///   - isFromPhotosLibrary: True if the asset came from Photos Library (affects rotation handling)
     @MainActor
     func configure(
         _ player: PooledPlayer,
         with asset: AVAsset,
         muted: Bool,
-        securityScopedURL: URL? = nil
+        securityScopedURL: URL? = nil,
+        isFromPhotosLibrary: Bool = false
     ) async throws {
         VideoDebugLogger.log("VideoPlayerPool: configuring player with new asset")
 
@@ -214,6 +221,15 @@ actor VideoPlayerPool {
                 let degrees = Int(round(angle * 180 / .pi))
                 rotationDegrees = ((degrees % 360) + 360) % 360
 
+                // Photos Library videos: The preferredTransform is designed for AVFoundation's
+                // coordinate system (Y-down), but CVPixelBuffer textures in Metal use a different
+                // convention. For Photos Library videos, we need to negate the rotation.
+                // This swaps 90° ↔ 270° while leaving 0° and 180° unchanged.
+                if isFromPhotosLibrary && rotationDegrees != 0 {
+                    rotationDegrees = (360 - rotationDegrees) % 360
+                    VideoDebugLogger.log("VideoPlayerPool: Photos Library video rotation negated to \(rotationDegrees)°")
+                }
+
                 // Apply rotation to get display size
                 if rotationDegrees == 90 || rotationDegrees == 270 {
                     naturalSize = CGSize(
@@ -221,7 +237,7 @@ actor VideoPlayerPool {
                 } else {
                     naturalSize = naturalSizeValue
                 }
-                VideoDebugLogger.log("VideoPlayerPool: extracted rotation=\(rotationDegrees)°, transform=(\(preferredTransform.a), \(preferredTransform.b), \(preferredTransform.c), \(preferredTransform.d))")
+                VideoDebugLogger.log("VideoPlayerPool: extracted rotation=\(rotationDegrees)°, transform=(\(preferredTransform.a), \(preferredTransform.b), \(preferredTransform.c), \(preferredTransform.d)), isFromPhotosLibrary=\(isFromPhotosLibrary)")
             } catch {
                 VideoDebugLogger.log("VideoPlayerPool: failed to load track info - \(error)")
             }
