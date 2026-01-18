@@ -498,12 +498,12 @@ final class MetalSlideshowRenderer {
                         self.photosLibraryLoadingSet.remove(localIdentifier)
                     }
                 } catch {
-                    await MainActor.run { [weak self] in
+                    _ = await MainActor.run { [weak self] in
                         self?.photosLibraryLoadingSet.remove(localIdentifier)
                     }
                 }
             } else {
-                await MainActor.run { [weak self] in
+                _ = await MainActor.run { [weak self] in
                     self?.photosLibraryLoadingSet.remove(localIdentifier)
                 }
             }
