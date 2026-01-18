@@ -80,6 +80,12 @@ final class MetalSlideshowRenderer {
      * Used when the new current media (especially videos) hasn't decoded a frame yet.
      * This prevents the "hot pink flash" when transitioning to a video that's still
      * waiting for its first decoded frame.
+     *
+     * VIDEO FLASH FIX (January 2026):
+     * When a video is promoted from next to current via advanceSlide(), there's a
+     * window where currentVideoSource hasn't decoded frames yet. During this window,
+     * we use this fallback texture (the last frame of the previous media) to prevent
+     * showing the transparent placeholder through to the background.
      */
     private var fallbackCurrentTexture: MTLTexture?
 
@@ -87,7 +93,16 @@ final class MetalSlideshowRenderer {
     private var photosLibraryTextureCache: [String: MTLTexture] = [:]
     private var photosLibraryLoadingSet: Set<String> = []
 
-    // Video texture sources (GPU sampling via AVPlayerItemVideoOutput)
+    /*
+     * Video texture sources: Two separate instances for current and next slots.
+     *
+     * VIDEO FLASH FIX (January 2026):
+     * When a video moves from next to current, we create a NEW AVPlayerItemVideoOutput
+     * on currentVideoSource. This means currentVideoSource won't have decoded frames
+     * immediately. However, nextVideoSource.lastTexture persists even after the player
+     * is detached, so we can use it as a temporary fallback. See textureForSlot() for
+     * the fallback logic.
+     */
     private let currentVideoSource: VideoTextureSource
     private let nextVideoSource: VideoTextureSource
     private var currentVideoPlayerID: ObjectIdentifier?
@@ -503,6 +518,25 @@ final class MetalSlideshowRenderer {
         // This might already happen automatically via the display link
     }
 
+    /*
+     * VIDEO FLASH FIX (January 2026): Texture selection with fallback support.
+     *
+     * For videos, there's a critical timing issue when a video is promoted from
+     * "next" to "current" via advanceSlide():
+     *
+     * 1. During transition: Video B plays in nextVideoSource, decodes frames
+     * 2. advanceSlide(): Video B promoted to current, nextVideo = nil
+     * 3. update(): currentVideoSource.setPooledPlayer(videoB) creates NEW output
+     * 4. update(): nextVideoSource.setPooledPlayer(nil) detaches player
+     * 5. draw(): currentVideoSource has no decoded frames yet!
+     *
+     * Solution: We always call currentVideoSource.currentTexture() first to give
+     * it a chance to decode frames. If it hasn't decoded any yet, we fall back
+     * to nextVideoSource which may still have frames from before promotion.
+     *
+     * Key insight: nextVideoSource.lastTexture persists even after the player is
+     * detached, so we can use it as a bridge until currentVideoSource catches up.
+     */
     private func textureForSlot(kind: MediaItem.Kind, slot: Slot) -> MTLTexture? {
         switch kind {
         case .photo:
@@ -513,6 +547,10 @@ final class MetalSlideshowRenderer {
                  * IMPORTANT: Always call currentTexture() first to give the source
                  * a chance to decode frames. hasRealTexture() only returns true
                  * AFTER currentTexture() has successfully decoded at least one frame.
+                 *
+                 * If we checked hasRealTexture() first (without calling currentTexture()),
+                 * we'd never give currentVideoSource a chance to decode, and the video
+                 * would freeze on nextVideoSource.lastTexture forever.
                  */
                 let currentTex = currentVideoSource.currentTexture()
 
@@ -1067,9 +1105,10 @@ private final class VideoTextureSource {
 
         guard let item = videoPlayer?.playerItem else {
             output = nil
-            // NOTE: Do NOT clear lastTexture here! It may be needed as fallback
-            // when a video is promoted from next to current and currentVideoSource
-            // hasn't decoded frames yet but nextVideoSource had them.
+            /*
+             * VIDEO FLASH FIX (January 2026): Do NOT clear lastTexture here!
+             * See setPooledPlayer() for detailed explanation.
+             */
             lastItemTime = .invalid
             return
         }
@@ -1094,9 +1133,20 @@ private final class VideoTextureSource {
 
         guard let item = videoPlayer?.playerItem else {
             output = nil
-            // NOTE: Do NOT clear lastTexture here! It may be needed as fallback
-            // when a video is promoted from next to current. The texture remains
-            // valid even after the player is detached.
+            /*
+             * VIDEO FLASH FIX (January 2026): Do NOT clear lastTexture here!
+             *
+             * When a video is promoted from next to current via advanceSlide():
+             * 1. advanceSlide() sets nextVideo = nil (before loading new next)
+             * 2. update() calls nextVideoSource.setPooledPlayer(nil)
+             * 3. If we cleared lastTexture here, we'd lose the decoded frames!
+             * 4. But currentVideoSource hasn't decoded frames yet...
+             * 5. Result: Flash because no valid texture available
+             *
+             * By preserving lastTexture, nextVideoSource can provide fallback frames
+             * until currentVideoSource decodes its own. The Metal texture remains
+             * valid in GPU memory even after the AVPlayer is detached.
+             */
             lastItemTime = .invalid
             return
         }
@@ -1113,6 +1163,11 @@ private final class VideoTextureSource {
         out.suppressesPlayerRendering = true
         item.add(out)
         output = out
+        /*
+         * Clear lastTexture when attaching a NEW video (different from previous).
+         * This ensures we don't show stale frames from a completely different video.
+         * Note: This is different from the nil case above where we preserve lastTexture.
+         */
         lastTexture = nil
         lastItemTime = .invalid
     }
@@ -1165,10 +1220,20 @@ private final class VideoTextureSource {
     }
 
     /*
-     * Returns true if the video has produced at least one real frame.
-     * Used to prevent the "hot pink flash" during video transitions where the
-     * incoming video hasn't decoded a frame yet but the outgoing media has
-     * already faded to 0% opacity.
+     * VIDEO FLASH FIX (January 2026): Check if video has produced a real frame.
+     *
+     * Returns true if the video has produced at least one real frame (lastTexture != nil).
+     * This is used in multiple places to prevent flashes:
+     *
+     * 1. In textureForSlot(): To decide whether to use currentVideoSource or fall back
+     *    to nextVideoSource during the video promotion window.
+     *
+     * 2. In currentSlotHasRealTexture(): To determine if fallback texture is needed.
+     *
+     * IMPORTANT: lastTexture persists even after the player is detached via
+     * setPooledPlayer(nil). This is intentional - it allows nextVideoSource to
+     * provide fallback frames after a video is promoted to currentVideoSource.
+     * The texture remains valid in GPU memory even without an active player.
      */
     func hasRealTexture() -> Bool {
         return lastTexture != nil
