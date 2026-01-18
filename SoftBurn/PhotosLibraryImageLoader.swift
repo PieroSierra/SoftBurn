@@ -40,7 +40,7 @@ actor PhotosLibraryImageLoader {
                 options: options
             ) { image, info in
 
-                if let error = info?[PHImageErrorKey] as? Error {
+                if info?[PHImageErrorKey] != nil {
                     continuation.resume(returning: nil)
                     return
                 }
@@ -78,7 +78,7 @@ actor PhotosLibraryImageLoader {
                 options: options
             ) { image, info in
 
-                if let error = info?[PHImageErrorKey] as? Error {
+                if info?[PHImageErrorKey] != nil {
                     continuation.resume(returning: nil)
                     return
                 }
