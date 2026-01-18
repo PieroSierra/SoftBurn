@@ -84,7 +84,8 @@ struct PatinaParamsVHS {
     float tearBandHeight;
     float tearOffsetTexels;
     float edgeSoftStrength;
-    float _pad0;
+    float scanlineBandWidth;  // Ratio of bright band (0.5-0.8)
+    float blackLift;          // Minimum black level (0-0.20)
 };
 
 // MARK: - Uniform Buffer
@@ -404,7 +405,24 @@ float3 applyVHS(texture2d<float> tex, sampler s, float2 uv, float time, float2 r
     // Scanlines: run in logical Y direction
     // For rotated content, scanlines appear vertical in screen space
     float logicalResY = (currentRotation == 90 || currentRotation == 270) ? resolution.x : resolution.y;
-    float scanline = sin(logicalUV.y * (logicalResY * p.lineFrequencyScale) * PI) * 0.5 + 0.5;
+
+    // Scanlines: gradient bands with wide bright areas, narrow dark lines
+    float freq = logicalResY * p.lineFrequencyScale * 0.5;  // Halve frequency for thicker bands
+    float phase = fract(logicalUV.y * freq);
+
+    // Asymmetric wave: bright band (e.g. 65%) with gradient edges, then dark gap
+    float bandWidth = p.scanlineBandWidth;  // Controls bright portion ratio
+    float scanline;
+    if (phase < bandWidth) {
+        // Bright band with soft gradient at edges
+        float t = phase / bandWidth;
+        float edgeFade = smoothstep(0.0, 0.12, t) * smoothstep(1.0, 0.88, t);
+        scanline = edgeFade;
+    } else {
+        // Dark gap between bands - smaller and darker
+        float t = (phase - bandWidth) / (1.0 - bandWidth);
+        scanline = 0.25 * (1.0 - cos(t * PI * 2.0)) * 0.5;  // Subtle pulse in dark area
+    }
     scanline = pow(scanline, p.scanlinePow);
     result *= p.scanlineBase + scanline * p.scanlineAmp;
 
@@ -428,6 +446,9 @@ float3 applyVHS(texture2d<float> tex, sampler s, float2 uv, float time, float2 r
     // Edge softening in logical X direction
     float edgeSoft = 1.0 - smoothstep(0.0, 0.02, logicalUV.x) * (1.0 - smoothstep(0.98, 1.0, logicalUV.x));
     result *= 0.98 + edgeSoft * p.edgeSoftStrength;
+
+    // Lift blacks and reduce contrast for washed-out VHS look
+    result = p.blackLift + result * (1.0 - p.blackLift);
 
     return saturate(result);
 }

@@ -147,6 +147,8 @@ struct PatinaVHSTuning: Codable {
     var scanlineAmp: Float = 0.180328      // 0..0.20
     var scanlinePow: Float = 1.18387       // 0.1..2
     var lineFrequencyScale: Float = 0.874821 // 0.4..1.0 (lower = thicker lines)
+    var scanlineBandWidth: Float = 0.65    // 0.5..0.8 (ratio of bright band)
+    var blackLift: Float = 0.08            // 0..0.20 (minimum black level)
 
     // Color/tone
     var desat: Float = 0.80                // 0..1
@@ -182,6 +184,8 @@ struct PatinaVHSTuning: Codable {
         "scanlineAmp": .init(min: 0.0, max: 0.20, step: 0.001),
         "scanlinePow": .init(min: 0.10, max: 2.0, step: 0.01),
         "lineFrequencyScale": .init(min: 0.40, max: 1.0, step: 0.01),
+        "scanlineBandWidth": .init(min: 0.50, max: 0.80, step: 0.01),
+        "blackLift": .init(min: 0.0, max: 0.20, step: 0.005),
         "desat": .init(min: 0.0, max: 1.0, step: 0.001),
         "tintR": .init(min: 0.80, max: 1.20, step: 0.001),
         "tintG": .init(min: 0.80, max: 1.20, step: 0.001),

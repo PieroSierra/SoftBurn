@@ -942,7 +942,8 @@ final class MetalSlideshowRenderer {
         var tearBandHeight: Float
         var tearOffsetTexels: Float
         var edgeSoftStrength: Float
-        var _pad0: Float = 0
+        var scanlineBandWidth: Float
+        var blackLift: Float
     }
 
     private struct PatinaUniforms {
@@ -1023,7 +1024,9 @@ final class MetalSlideshowRenderer {
             tearSpeed: tuning.vhs.tearSpeed,
             tearBandHeight: tuning.vhs.tearBandHeight,
             tearOffsetTexels: tuning.vhs.tearOffsetTexels,
-            edgeSoftStrength: tuning.vhs.edgeSoftStrength
+            edgeSoftStrength: tuning.vhs.edgeSoftStrength,
+            scanlineBandWidth: tuning.vhs.scanlineBandWidth,
+            blackLift: tuning.vhs.blackLift
         )
 
         let u = PatinaUniforms(
