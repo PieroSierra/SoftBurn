@@ -635,7 +635,7 @@ final class MetalSlideshowRenderer {
 
     private func writeLayerUniforms(_ u: LayerUniforms, to buffer: MTLBuffer) {
         var uu = u
-        withUnsafeBytes(of: &uu) { bytes in
+        _ = withUnsafeBytes(of: &uu) { bytes in
             memcpy(buffer.contents(), bytes.baseAddress!, MemoryLayout<LayerUniforms>.stride)
         }
     }
@@ -1040,7 +1040,7 @@ final class MetalSlideshowRenderer {
             vhs: vhs
         )
         var uu = u
-        withUnsafeBytes(of: &uu) { bytes in
+        _ = withUnsafeBytes(of: &uu) { bytes in
             memcpy(patinaUniformBuffer.contents(), bytes.baseAddress!, MemoryLayout<PatinaUniforms>.stride)
         }
     }
