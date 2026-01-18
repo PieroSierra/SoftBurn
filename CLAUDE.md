@@ -45,8 +45,7 @@ State Management Layer
     SlideshowSettings (UserDefaults-backed preferences)
 
 Rendering & Effects Layer
-    SwiftUI Path: Transition views + PostProcessingEffect
-    Metal Path: MetalSlideshowView + Two-pass pipeline (scene + patina)
+    Metal Pipeline: MetalSlideshowView + Two-pass pipeline (scene + patina)
 
 Services Layer
     PhotoDiscovery, FaceDetectionCache, ThumbnailCache, MusicPlaybackManager
@@ -65,21 +64,25 @@ Three primary observable objects coordinate app state:
 
 3. **SlideshowSettings** (@MainActor, singleton) - UserDefaults-backed settings (transition style, duration, effects, music) and per-document properties
 
-### Two-Path Rendering Strategy
+### Unified Metal Rendering Pipeline
 
-The app uses **conditional rendering** based on whether Patina effects are enabled:
+SoftBurn uses a **unified Metal pipeline** for all slideshow rendering, regardless of effect settings. This provides:
 
-**SwiftUI Path** (no Patina):
-- Direct transition view rendering (PlainTransitionView, CrossFadeTransitionView, PanAndZoomTransitionView)
-- PostProcessingEffect modifier applied for monochrome/silvertone/sepia
-- Lower overhead, simpler pipeline
+- Consistent GPU-accelerated rendering for all photos and videos
+- Two-pass architecture: scene composition + optional patina post-processing
+- Efficient video player pooling to prevent hardware decoder exhaustion
+- Ken Burns motion with face detection zoom
+- Color effects (monochrome, silvertone, sepia) applied in GPU shaders
+- Film simulation effects (35mm, aged film, VHS) with rotation-aware processing
 
-**Metal Path** (Patina enabled):
-- MetalSlideshowView wraps MTKView with custom delegate
-- MetalSlideshowRenderer executes two-pass pipeline:
-  - Pass 1: Render media with transforms to offscreen texture
-  - Pass 2: Apply Patina post-processing (35mm film, aged film, VHS simulation)
-- SlideshowShaders.metal + PatinaShaders.metal implement GPU kernels
+**Pipeline Architecture:**
+
+1. **Pass 1 - Scene Composition**: Renders current and next media to an offscreen texture with transforms, opacity, and color effects
+2. **Pass 2 - Patina Post-Processing**:
+   - When `patina = .none`: Direct blit to drawable (no post-processing)
+   - When `patina = 35mm/aged/VHS`: Apply film simulation effects to scene texture
+
+See `/specs/metal-pipeline-architecture.md` for detailed technical documentation.
 
 ### Concurrency Model
 
@@ -112,16 +115,11 @@ Key design: Heavy operations (face detection, thumbnails) run on background acto
 - `SlideshowSettings.swift` - Persistent preferences
 
 **Rendering Pipeline:**
-- `SlideshowPlayerView.swift` - Playback container, routing to SwiftUI vs Metal path
+- `SlideshowPlayerView.swift` - Playback container, always uses Metal pipeline
 - `MetalSlideshowView.swift` + `MetalSlideshowRenderer.swift` - Metal rendering implementation
-- `SlideshowShaders.metal` - Media rendering shaders
+- `SlideshowShaders.metal` - Scene composition shaders (media rendering, transforms, color effects)
 - `PatinaShaders.metal` - Film simulation shaders (grain, scratches, vignette, color shifts)
-- `PostProcessingEffect.swift` - SwiftUI-based effects (CPU-side)
-
-**Transitions:**
-- `PlainTransitionView.swift` - Direct image display
-- `CrossFadeTransitionView.swift` - Fade between slides
-- `PanAndZoomTransitionView.swift` - Ken Burns effect with face-detection zoom
+- `VideoPlayerPool.swift` - Video player pooling to prevent hardware decoder exhaustion
 
 **Caching & Discovery:**
 - `FaceDetectionCache.swift` - Vision framework face detection (actor, prefetch during import)
@@ -147,9 +145,9 @@ When creating specifications for new features, place them in the `/specs` folder
 
 ### Adding New Effects
 
-1. For SwiftUI effects: Extend `PostProcessingEffect.swift` with new cases
-2. For Metal effects: Add shader functions to `PatinaShaders.metal` and parameters to `SlideshowSettings`
-3. Effects tuning: Use EffectTuningView debug window (recent addition for parameter adjustment)
+1. For color effects (monochrome, silvertone, sepia): Add cases to shader logic in `SlideshowShaders.metal`
+2. For patina effects (film simulation): Add shader functions to `PatinaShaders.metal` and parameters to `SlideshowSettings`
+3. Effects tuning: Use EffectTuningView debug window for live parameter adjustment
 
 ### Working with Media
 
@@ -163,8 +161,8 @@ When creating specifications for new features, place them in the `/specs` folder
 1. User clicks "Play" → `ContentView.playSlideshow()`
 2. Create `SlideshowPlayerView` with photos + settings
 3. `SlideshowWindowController.present()` creates fullscreen window
-4. `SlideshowPlayerState` manages timer-based transitions
-5. Choose rendering path: check `settings.patina` → route to Metal or SwiftUI
+4. `SlideshowPlayerState` manages timer-based transitions and media loading
+5. `MetalSlideshowRenderer` executes two-pass rendering pipeline (scene + optional patina)
 6. Exit via Esc → `performSafeExit()` → stop timers, fade music, close window
 
 ### Thumbnail & Face Detection
@@ -176,13 +174,14 @@ When creating specifications for new features, place them in the `/specs` folder
 ## Recent Development Focus
 
 From git history, recent work includes:
+- Migration to unified Metal pipeline (removed dual SwiftUI/Metal paths)
+- Video player pooling to prevent hardware decoder exhaustion
 - Effects parameter tuning and debug UI
-- Metal pipeline refinement
+- Rotation-aware VHS effects
 - Dark mode fixes
-- Rotation support in main window
-- Major refactor to Metal-based effects pipeline
+- Face detection zoom improvements
 
-Current state: Stable, production-ready with ongoing polish on effects parameters.
+Current state: Stable, production-ready with unified Metal rendering pipeline.
 
 ## File Operations
 

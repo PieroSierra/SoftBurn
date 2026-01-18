@@ -255,9 +255,14 @@ final class MetalSlideshowRenderer {
                 enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             }
 
-            // Draw next (during and after transition, until advanceSlide completes)
+            // Draw next (only during active transition: transitionStart <= progress < 1.0)
+            // CRITICAL: Must match the opacity calculation's isInTransition logic (line 544)
+            // to prevent flashing when textures load asynchronously.
             let transitionStart = playerState.currentHoldDuration / playerState.totalSlideDuration
-            if playerState.animationProgress >= transitionStart,
+            let isInTransitionWindow = playerState.animationProgress >= transitionStart &&
+                                      playerState.animationProgress < 1.0
+            if playerState.transitionStyle != .plain,
+               isInTransitionWindow,
                let tex = textureForSlot(kind: playerState.nextKind, slot: .next) {
                 let u = makeLayerUniforms(
                     mediaTexture: tex,
