@@ -239,7 +239,27 @@ final class MetalSlideshowRenderer {
             enc.setRenderPipelineState(scenePipeline)
             enc.setVertexBuffer(quadVertexBuffer, offset: 0, index: 0)
 
-            // Draw current
+            /*
+             * SCENE COMPOSITION: Draw current and next media layers with crossfade.
+             *
+             * Timeline for a single slide cycle (e.g., 5s hold + 2s transition = 7s total):
+             *
+             *   animationProgress:  0.0 -------- 0.71 -------- 1.0
+             *                       |            |             |
+             *                       hold phase   transition    advanceSlide()
+             *                                    begins        called
+             *
+             * RACE CONDITION FIX (January 2026):
+             * There's a brief window when animationProgress reaches 1.0 but advanceSlide()
+             * hasn't yet promoted the texture slots. During this window:
+             *   - Current photo: drawn at 0% opacity (faded out)
+             *   - Next photo: MUST be drawn at 100% opacity (fully visible)
+             *
+             * Without this fix, both photos would be invisible, causing a background flash.
+             * The opacity calculation in makeLayerUniforms() handles this case explicitly.
+             */
+
+            // Draw current (outgoing during transition, or sole photo during hold)
             if let tex = textureForSlot(kind: playerState.currentKind, slot: .current) {
                 let u = makeLayerUniforms(
                     mediaTexture: tex,
@@ -255,8 +275,18 @@ final class MetalSlideshowRenderer {
                 enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             }
 
-            // Draw next photo during transition AND when animation completes (until advanceSlide promotes slots).
-            // When animationProgress >= 1.0, the "next" photo should be fully visible since current is at 0%.
+            /*
+             * Draw next photo when animationProgress >= transitionStart.
+             *
+             * IMPORTANT: Do NOT add an upper bound check (animationProgress < 1.0) here!
+             * The next photo must continue to be drawn even after progress reaches 1.0,
+             * because advanceSlide() runs asynchronously and there's a race window where
+             * the current photo is at 0% opacity but slots haven't been promoted yet.
+             *
+             * The opacity calculation ensures:
+             *   - During transition (transitionStart <= progress < 1.0): crossfade
+             *   - After transition (progress >= 1.0): next at 100%, current at 0%
+             */
             let transitionStart = playerState.currentHoldDuration / playerState.totalSlideDuration
             let shouldDrawNext = playerState.transitionStyle != .plain &&
                                 playerState.animationProgress >= transitionStart
@@ -533,27 +563,54 @@ final class MetalSlideshowRenderer {
             return min(1.0, (playerState.animationProgress - transitionStart) / duration)
         }()
 
+        /*
+         * OPACITY CALCULATION - Critical for smooth crossfade transitions.
+         *
+         * This calculation must handle three phases:
+         *
+         * 1. HOLD PHASE (animationProgress < transitionStart):
+         *    - Current: 100% opacity (fully visible)
+         *    - Next: 0% opacity (not drawn, see draw condition above)
+         *
+         * 2. TRANSITION PHASE (transitionStart <= animationProgress < 1.0):
+         *    - Current: fades from 100% → 0% as transitionProgress goes 0 → 1
+         *    - Next: fades from 0% → 100% as transitionProgress goes 0 → 1
+         *
+         * 3. POST-TRANSITION RACE WINDOW (animationProgress >= 1.0):
+         *    - Current: 0% opacity (must be invisible)
+         *    - Next: 100% opacity (must be fully visible!)
+         *
+         *    This phase exists because advanceSlide() is async. There's a brief window
+         *    where the animation timer has reached 1.0 but the slot promotion hasn't
+         *    completed yet. During this window, "next" must remain fully visible to
+         *    prevent a background flash.
+         *
+         * HISTORICAL NOTE (January 2026):
+         * A bug caused both current and next to be 0% opacity when progress >= 1.0,
+         * resulting in a "hot pink flash" (background color showing through).
+         * The fix ensures next is explicitly set to 100% in phase 3.
+         */
         let opacity: Double = {
             if playerState.transitionStyle == .plain { return 1.0 }
 
-            // When animationProgress >= 1.0 (transition complete, waiting for advanceSlide):
-            // - Current (outgoing) photo: 0% opacity (invisible)
-            // - Next (incoming) photo: 100% opacity (fully visible)
-            // This prevents the hot-pink flash between transition completion and slot promotion.
+            /* Phase 3: Post-transition race window - next must stay fully visible */
             if playerState.animationProgress >= 1.0 {
                 return slot == .current ? 0.0 : 1.0
             }
 
-            // Calculate transition state directly from animationProgress to avoid race condition
-            // with the isTransitioning flag (which is set asynchronously by the player state timer).
+            /*
+             * Calculate transition state from animationProgress directly.
+             * Do NOT use playerState.isTransitioning flag here - it's set asynchronously
+             * by the animation timer and can be out of sync with animationProgress.
+             */
             let isInTransition = playerState.animationProgress >= transitionStart
 
+            /* Phase 1: Hold phase - only current is visible */
             if !isInTransition {
-                // Not in transition: current at full opacity, next should not be visible
                 return slot == .current ? 1.0 : 0.0
             }
 
-            // In transition: crossfade based on transition progress
+            /* Phase 2: Transition phase - crossfade based on progress */
             switch slot {
             case .current: return 1.0 - transitionProgress
             case .next: return transitionProgress
