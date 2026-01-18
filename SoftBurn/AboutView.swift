@@ -116,7 +116,7 @@ struct TipJarSection: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Buy me a coffee?")
+            Text("SoftBurn is free. Coffee is not. Buy me a cup?")
             
             HStack(spacing: 24) {
                 ForEach(TipJarManager.TipTier.allCases, id: \.self) { tier in
