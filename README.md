@@ -79,31 +79,30 @@ No external dependencies to install - all frameworks are built into macOS.
 
 ## Project Structure
 
+SoftBurn uses a feature-based folder organization:
+
 ```
 SoftBurn/
-├── SoftBurnApp.swift           # App entry point
-├── Views/
-│   ├── ContentView.swift       # Main window UI
-│   ├── PhotoGridView.swift     # Media library grid
-│   └── SlideshowPlayerView.swift # Playback orchestration
-├── Rendering/
-│   ├── Metal/                  # Metal rendering pipeline
-│   │   ├── MetalSlideshowRenderer.swift
-│   │   ├── SlideshowShaders.metal
-│   │   └── PatinaShaders.metal
-│   └── SwiftUI/                # SwiftUI transition views
-├── State/
-│   ├── AppSessionState.swift   # Lifecycle & dirty tracking
-│   ├── SlideshowState.swift    # Media library management
-│   └── SlideshowSettings.swift # Persistent preferences
-├── Services/
-│   ├── FaceDetectionCache.swift
-│   ├── ThumbnailCache.swift
-│   └── MusicPlaybackManager.swift
-└── Models/
-    ├── MediaItem.swift
-    └── SlideshowDocument.swift # .softburn file format
+├── App/                    # Application lifecycle and entry point
+├── Models/                 # Core data models (MediaItem, SlideshowDocument)
+├── State/                  # State management (@MainActor observables)
+├── Views/                  # SwiftUI/AppKit views organized by feature
+│   ├── Main/              # Root app UI
+│   ├── Grid/              # Photo grid and thumbnails
+│   ├── Slideshow/         # Playback views
+│   ├── Settings/          # Settings and tuning UI
+│   ├── About/             # About and acknowledgements
+│   ├── WindowControllers/ # Window management
+│   └── Import/            # Import UI helpers
+├── Rendering/             # Metal rendering pipeline and shaders
+├── Video/                 # Video playback and pooling
+├── Caching/               # Cache actors (faces, thumbnails, images)
+├── Import/                # Media discovery and import logic
+├── Audio/                 # Music playback
+└── Utilities/             # Helpers and utilities
 ```
+
+See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
 
 ## Roadmap
 

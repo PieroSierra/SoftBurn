@@ -84,6 +84,30 @@ SoftBurn uses a **unified Metal pipeline** for all slideshow rendering, regardle
 
 See `/specs/metal-pipeline-architecture.md` for detailed technical documentation.
 
+## File Organization
+
+SoftBurn uses a feature-based folder structure that mirrors architectural layers:
+
+**Core Layers:**
+- `App/` - Entry point, app delegate, lifecycle management
+- `Models/` - Data models (MediaItem, SlideshowDocument, PostProcessingEffect)
+- `State/` - Observable state management (@MainActor)
+
+**Feature Modules:**
+- `Views/` - UI components organized by feature area
+- `Rendering/` - Metal pipeline and shaders
+- `Video/` - Video playback infrastructure
+- `Caching/` - Background actors for heavy operations
+- `Import/` - Media discovery and Photos Library integration
+- `Audio/` - Music playback
+- `Utilities/` - Shared helpers
+
+**Critical Files That Must Stay in Root:**
+- `Info.plist` - Referenced in build settings as `SoftBurn/Info.plist`
+- `SoftBurn.entitlements` - Code signing entitlements path
+- `Assets.xcassets/` - Asset catalog
+- `Resources/` - Bundle resources
+
 ### Concurrency Model
 
 Uses Swift's actor model with strict @MainActor isolation:
