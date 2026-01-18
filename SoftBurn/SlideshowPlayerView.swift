@@ -542,9 +542,13 @@ class SlideshowPlayerState: ObservableObject {
             queue: .main
         ) { [weak videoPlayer] _ in
             guard let videoPlayer else { return }
-            videoPlayer.player.seek(to: .zero) { finished in
-                if finished {
-                    videoPlayer.player.play()
+            MainActor.assumeIsolated {
+                videoPlayer.player.seek(to: .zero) { finished in
+                    if finished {
+                        MainActor.assumeIsolated {
+                            videoPlayer.player.play()
+                        }
+                    }
                 }
             }
         }
