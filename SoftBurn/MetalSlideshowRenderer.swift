@@ -75,6 +75,14 @@ final class MetalSlideshowRenderer {
     private var currentPhotoKey: PhotoKey?
     private var nextPhotoKey: PhotoKey?
 
+    /*
+     * Fallback texture: stores the last successfully rendered "current" texture.
+     * Used when the new current media (especially videos) hasn't decoded a frame yet.
+     * This prevents the "hot pink flash" when transitioning to a video that's still
+     * waiting for its first decoded frame.
+     */
+    private var fallbackCurrentTexture: MTLTexture?
+
     // Texture cache for Photos Library assets (to avoid reloading)
     private var photosLibraryTextureCache: [String: MTLTexture] = [:]
     private var photosLibraryLoadingSet: Set<String> = []
@@ -257,16 +265,53 @@ final class MetalSlideshowRenderer {
              *
              * Without this fix, both photos would be invisible, causing a background flash.
              * The opacity calculation in makeLayerUniforms() handles this case explicitly.
+             *
+             * VIDEO DECODER DELAY FIX (January 2026):
+             * When transitioning to a video, the decoder may not have produced a frame yet
+             * even after advanceSlide() promotes the video to current. In this case, we
+             * use a fallback texture (the last good current frame) to prevent showing
+             * the transparent placeholder through to the background.
              */
 
+            /*
+             * Check if textures are ready BEFORE drawing either layer.
+             * These values are used to adjust opacity and enable fallback rendering.
+             */
+            let nextTextureReady = nextSlotHasRealTexture(kind: playerState.nextKind)
+            let currentTextureReady = currentSlotHasRealTexture(kind: playerState.currentKind)
+
+            /*
+             * Get the current texture, with fallback support for videos.
+             * If current is a video with no decoded frames yet, use the fallback texture
+             * (which contains the last good frame from the previous current media).
+             */
+            var currentTexture = textureForSlot(kind: playerState.currentKind, slot: .current)
+            let usingFallback: Bool
+            if playerState.currentKind == .video && !currentTextureReady {
+                // Video has no decoded frame - use fallback if available
+                if let fallback = fallbackCurrentTexture {
+                    currentTexture = fallback
+                    usingFallback = true
+                } else {
+                    usingFallback = false
+                }
+            } else {
+                usingFallback = false
+                // Current texture is valid - save it as fallback for future use
+                if let tex = currentTexture, !usingFallback {
+                    fallbackCurrentTexture = tex
+                }
+            }
+
             // Draw current (outgoing during transition, or sole photo during hold)
-            if let tex = textureForSlot(kind: playerState.currentKind, slot: .current) {
+            if let tex = currentTexture {
                 let u = makeLayerUniforms(
                     mediaTexture: tex,
                     drawableSize: CGSize(width: sceneTexture.width, height: sceneTexture.height),
                     playerState: playerState,
                     settings: settings,
-                    slot: .current
+                    slot: .current,
+                    nextTextureReady: nextTextureReady
                 )
                 writeLayerUniforms(u, to: currentLayerUniformBuffer)
                 enc.setVertexBuffer(currentLayerUniformBuffer, offset: 0, index: 1)
@@ -297,7 +342,8 @@ final class MetalSlideshowRenderer {
                     drawableSize: CGSize(width: sceneTexture.width, height: sceneTexture.height),
                     playerState: playerState,
                     settings: settings,
-                    slot: .next
+                    slot: .next,
+                    nextTextureReady: nextTextureReady
                 )
                 writeLayerUniforms(u, to: nextLayerUniformBuffer)
                 enc.setVertexBuffer(nextLayerUniformBuffer, offset: 0, index: 1)
@@ -462,7 +508,72 @@ final class MetalSlideshowRenderer {
         case .photo:
             return (slot == .current) ? currentPhotoTexture : nextPhotoTexture
         case .video:
-            return (slot == .current) ? currentVideoSource.currentTexture() : nextVideoSource.currentTexture()
+            if slot == .current {
+                /*
+                 * IMPORTANT: Always call currentTexture() first to give the source
+                 * a chance to decode frames. hasRealTexture() only returns true
+                 * AFTER currentTexture() has successfully decoded at least one frame.
+                 */
+                let currentTex = currentVideoSource.currentTexture()
+
+                // If currentVideoSource has decoded a real frame, use it
+                if currentVideoSource.hasRealTexture() {
+                    return currentTex
+                }
+
+                // Fallback: use nextVideoSource if it has a real frame
+                // (this happens during the brief window after video promotion
+                // before currentVideoSource decodes its first frame)
+                if nextVideoSource.hasRealTexture() {
+                    return nextVideoSource.currentTexture()
+                }
+
+                // Last resort: use whatever currentVideoSource returned (might be placeholder)
+                return currentTex
+            } else {
+                return nextVideoSource.currentTexture()
+            }
+        }
+    }
+
+    /*
+     * Check if the next media slot has a real texture ready (not just a placeholder).
+     * For photos: checks if nextPhotoTexture is loaded
+     * For videos: checks if the video has decoded at least one frame
+     *
+     * Used in the opacity calculation to prevent fading out the current media
+     * before the next media is ready to be displayed.
+     */
+    private func nextSlotHasRealTexture(kind: MediaItem.Kind) -> Bool {
+        switch kind {
+        case .photo:
+            return nextPhotoTexture != nil
+        case .video:
+            return nextVideoSource.hasRealTexture()
+        }
+    }
+
+    /*
+     * Check if the current media slot has a real texture ready.
+     * For videos: if the decoder hasn't produced a frame yet, we should not
+     * draw the video at all (to avoid showing transparent placeholder).
+     *
+     * IMPORTANT: When a video moves from "next" to "current" via advanceSlide(),
+     * currentVideoSource creates a NEW output and hasn't decoded frames yet.
+     * But nextVideoSource might still have decoded frames from when the video
+     * was in the next slot! We check BOTH sources to handle this transition window.
+     *
+     * Note: nextVideoSource.lastTexture persists even after the player is detached,
+     * so we can use it as a fallback until currentVideoSource decodes its own frames.
+     */
+    private func currentSlotHasRealTexture(kind: MediaItem.Kind) -> Bool {
+        switch kind {
+        case .photo:
+            return currentPhotoTexture != nil
+        case .video:
+            // Check if EITHER source has decoded frames
+            // (nextVideoSource might still have frames from before promotion)
+            return currentVideoSource.hasRealTexture() || nextVideoSource.hasRealTexture()
         }
     }
 
@@ -496,7 +607,8 @@ final class MetalSlideshowRenderer {
         drawableSize: CGSize,
         playerState: SlideshowPlayerState,
         settings: SlideshowSettings,
-        slot: Slot
+        slot: Slot,
+        nextTextureReady: Bool
     ) -> LayerUniforms {
         // Compute fitted aspect scale (like .aspectRatio(.fit) into full frame)
         let viewW = max(1.0, Double(drawableSize.width))
@@ -585,6 +697,12 @@ final class MetalSlideshowRenderer {
          *    completed yet. During this window, "next" must remain fully visible to
          *    prevent a background flash.
          *
+         * VIDEO READINESS CHECK (January 2026):
+         * For videos, the decoder may not have produced a frame yet when the transition
+         * starts or during the race window. In this case, we keep the current media
+         * visible (at some opacity) to prevent showing the background through the
+         * transparent video placeholder texture.
+         *
          * HISTORICAL NOTE (January 2026):
          * A bug caused both current and next to be 0% opacity when progress >= 1.0,
          * resulting in a "hot pink flash" (background color showing through).
@@ -593,9 +711,18 @@ final class MetalSlideshowRenderer {
         let opacity: Double = {
             if playerState.transitionStyle == .plain { return 1.0 }
 
-            /* Phase 3: Post-transition race window - next must stay fully visible */
+            /*
+             * Phase 3: Post-transition race window - next must stay fully visible.
+             * BUT: If next texture isn't ready (video still decoding), keep current visible
+             * to prevent background flash through transparent placeholder.
+             */
             if playerState.animationProgress >= 1.0 {
-                return slot == .current ? 0.0 : 1.0
+                if slot == .current {
+                    // Keep current visible if next isn't ready yet
+                    return nextTextureReady ? 0.0 : 1.0
+                } else {
+                    return 1.0
+                }
             }
 
             /*
@@ -610,10 +737,21 @@ final class MetalSlideshowRenderer {
                 return slot == .current ? 1.0 : 0.0
             }
 
-            /* Phase 2: Transition phase - crossfade based on progress */
+            /*
+             * Phase 2: Transition phase - crossfade based on progress.
+             * If next texture isn't ready, clamp current's minimum opacity to prevent
+             * it from fading out completely while next shows transparent placeholder.
+             */
             switch slot {
-            case .current: return 1.0 - transitionProgress
-            case .next: return transitionProgress
+            case .current:
+                let baseOpacity = 1.0 - transitionProgress
+                if !nextTextureReady {
+                    // Don't let current fade below 50% if next isn't ready
+                    return max(0.5, baseOpacity)
+                }
+                return baseOpacity
+            case .next:
+                return transitionProgress
             }
         }()
 
@@ -929,7 +1067,9 @@ private final class VideoTextureSource {
 
         guard let item = videoPlayer?.playerItem else {
             output = nil
-            lastTexture = nil
+            // NOTE: Do NOT clear lastTexture here! It may be needed as fallback
+            // when a video is promoted from next to current and currentVideoSource
+            // hasn't decoded frames yet but nextVideoSource had them.
             lastItemTime = .invalid
             return
         }
@@ -954,7 +1094,9 @@ private final class VideoTextureSource {
 
         guard let item = videoPlayer?.playerItem else {
             output = nil
-            lastTexture = nil
+            // NOTE: Do NOT clear lastTexture here! It may be needed as fallback
+            // when a video is promoted from next to current. The texture remains
+            // valid even after the player is detached.
             lastItemTime = .invalid
             return
         }
@@ -1020,6 +1162,16 @@ private final class VideoTextureSource {
         lastTexture = tex
         lastItemTime = itemTime
         return tex
+    }
+
+    /*
+     * Returns true if the video has produced at least one real frame.
+     * Used to prevent the "hot pink flash" during video transitions where the
+     * incoming video hasn't decoded a frame yet but the outgoing media has
+     * already faded to 0% opacity.
+     */
+    func hasRealTexture() -> Bool {
+        return lastTexture != nil
     }
 }
 
