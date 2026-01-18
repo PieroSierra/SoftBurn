@@ -58,7 +58,7 @@ actor ViewerImageLoader {
     /// Legacy method for URL-based loading (filesystem only)
     func load(url: URL) async -> NSImage? {
         // Create a temporary filesystem MediaItem for caching consistency
-        let tempItem = MediaItem(url: url, kind: .photo)
+        let tempItem = await MainActor.run { MediaItem(url: url, kind: .photo) }
         return await load(item: tempItem)
     }
 
