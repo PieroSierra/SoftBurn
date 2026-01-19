@@ -326,14 +326,34 @@ actor ExportCoordinator {
     }
 
     private func findSlides(at time: Double) -> (current: SlideEntry?, next: SlideEntry?, animationProgress: Double) {
+        /*
+         * TIMELINE MODEL (must match live playback in SlideshowPlayerState):
+         *
+         * Live playback uses: totalSlideDuration = transitionDuration + holdDuration
+         * where the transition happens at the END of each slide's cycle.
+         *
+         * Example with 5s hold + 2s transition:
+         * - Total cycle = 7s
+         * - Hold phase: progress 0 → 0.71 (5/7)
+         * - Transition phase: progress 0.71 → 1.0
+         *
+         * During transition, BOTH current and next are drawn with crossfade.
+         * The next slide starts fading in while current fades out.
+         *
+         * IMPORTANT: The export timeline startTime marks when each slide BEGINS its cycle,
+         * not when it first becomes visible (next slides are visible earlier during previous
+         * slide's transition). This matches the live playback model exactly.
+         */
         for (index, entry) in slideTimeline.enumerated() {
+            // Each slide's cycle runs from startTime to startTime + totalDuration
+            // The totalDuration = holdDuration + transitionDuration
             let entryEndTime = entry.startTime + entry.totalDuration
 
             if time >= entry.startTime && time < entryEndTime {
                 let localTime = time - entry.startTime
                 let progress = localTime / entry.totalDuration
 
-                // Get next slide if in transition
+                // Get next slide - needed for transition rendering
                 let nextEntry: SlideEntry?
                 if index + 1 < slideTimeline.count {
                     nextEntry = slideTimeline[index + 1]

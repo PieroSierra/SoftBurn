@@ -97,7 +97,7 @@ final class ExportProgress {
     var progressText: String {
         switch phase {
         case .renderingFrames:
-            return "Frame \(currentFrame) of \(totalFrames)"
+            return "Rendering frame \(currentFrame) of \(totalFrames)"
         default:
             return phase.displayText
         }

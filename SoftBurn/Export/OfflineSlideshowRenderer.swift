@@ -22,7 +22,8 @@ final class OfflineSlideshowRenderer {
     // Scene pipeline (media layers)
     private let scenePipeline: MTLRenderPipelineState
     private let quadVertexBuffer: MTLBuffer
-    private var layerUniformBuffer: MTLBuffer
+    private var currentLayerUniformBuffer: MTLBuffer
+    private var nextLayerUniformBuffer: MTLBuffer
 
     // Patina pipeline (post-process)
     private let patinaPipeline: MTLRenderPipelineState
@@ -72,11 +73,16 @@ final class OfflineSlideshowRenderer {
         }
         quadVertexBuffer = vb
 
-        // Uniform buffers
-        guard let lub = device.makeBuffer(length: MemoryLayout<LayerUniforms>.stride, options: .storageModeShared) else {
-            throw ExportError.metalInitializationFailed("Failed to create layer uniform buffer")
+        // Uniform buffers - separate buffers for current and next to avoid GPU race conditions
+        guard let club = device.makeBuffer(length: MemoryLayout<LayerUniforms>.stride, options: .storageModeShared) else {
+            throw ExportError.metalInitializationFailed("Failed to create current layer uniform buffer")
         }
-        layerUniformBuffer = lub
+        currentLayerUniformBuffer = club
+
+        guard let nlub = device.makeBuffer(length: MemoryLayout<LayerUniforms>.stride, options: .storageModeShared) else {
+            throw ExportError.metalInitializationFailed("Failed to create next layer uniform buffer")
+        }
+        nextLayerUniformBuffer = nlub
 
         guard let pub = device.makeBuffer(length: MemoryLayout<PatinaUniforms>.stride, options: .storageModeShared) else {
             throw ExportError.metalInitializationFailed("Failed to create patina uniform buffer")
@@ -215,10 +221,10 @@ final class OfflineSlideshowRenderer {
                 animationProgress: animationProgress,
                 isTransitioning: isTransitioning
             )
-            writeLayerUniforms(uniforms)
-            enc.setVertexBuffer(layerUniformBuffer, offset: 0, index: 1)
+            writeLayerUniforms(uniforms, to: currentLayerUniformBuffer)
+            enc.setVertexBuffer(currentLayerUniformBuffer, offset: 0, index: 1)
             enc.setFragmentTexture(tex, index: 0)
-            enc.setFragmentBuffer(layerUniformBuffer, offset: 0, index: 1)
+            enc.setFragmentBuffer(currentLayerUniformBuffer, offset: 0, index: 1)
             enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
 
@@ -232,10 +238,10 @@ final class OfflineSlideshowRenderer {
                 animationProgress: animationProgress,
                 isTransitioning: true
             )
-            writeLayerUniforms(uniforms)
-            enc.setVertexBuffer(layerUniformBuffer, offset: 0, index: 1)
+            writeLayerUniforms(uniforms, to: nextLayerUniformBuffer)
+            enc.setVertexBuffer(nextLayerUniformBuffer, offset: 0, index: 1)
             enc.setFragmentTexture(tex, index: 0)
-            enc.setFragmentBuffer(layerUniformBuffer, offset: 0, index: 1)
+            enc.setFragmentBuffer(nextLayerUniformBuffer, offset: 0, index: 1)
             enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
 
@@ -465,10 +471,10 @@ final class OfflineSlideshowRenderer {
         )
     }
 
-    private func writeLayerUniforms(_ u: LayerUniforms) {
+    private func writeLayerUniforms(_ u: LayerUniforms, to buffer: MTLBuffer) {
         var uu = u
         _ = withUnsafeBytes(of: &uu) { bytes in
-            memcpy(layerUniformBuffer.contents(), bytes.baseAddress!, MemoryLayout<LayerUniforms>.stride)
+            memcpy(buffer.contents(), bytes.baseAddress!, MemoryLayout<LayerUniforms>.stride)
         }
     }
 

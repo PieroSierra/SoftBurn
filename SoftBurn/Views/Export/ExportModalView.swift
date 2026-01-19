@@ -31,16 +31,16 @@ struct ExportModalView: View {
             HStack(spacing: 12) {
                 if progress.phase.isTerminal {
                     if case .completed = progress.phase {
-                        Button("Reveal in Finder") {
+                        Button("Show in Finder") {
                             onRevealInFinder()
                         }
                         .buttonStyle(.borderedProminent)
                     }
 
-                    Button("Done") {
+                  /*  Button("Done") {
                         onDismiss()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.bordered)*/
                 } else {
                     Button("Cancel") {
                         onCancel()
