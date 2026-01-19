@@ -18,6 +18,7 @@ final class AppSessionState: ObservableObject {
 
     @Published var isDirty: Bool = false
     @Published var showUnsavedChangesAlert: Bool = false
+    @Published var isExporting: Bool = false
     
     /// Whether the current slideshow has any photos.
     /// Used to suppress "unsaved changes" prompts when the canvas is empty.

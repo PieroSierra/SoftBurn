@@ -80,6 +80,18 @@ class SlideshowSettings: ObservableObject {
     
     /// Custom music file URL (per-document, not persisted to UserDefaults)
     @Published var customMusicURL: URL? = nil
+
+    /// Last export directory (persisted to UserDefaults for convenience)
+    @Published var lastExportDirectory: URL? = nil {
+        didSet {
+            if let url = lastExportDirectory {
+                storedLastExportDirectory = url.path
+            } else {
+                storedLastExportDirectory = ""
+            }
+        }
+    }
+    @AppStorage("settings.lastExportDirectory") private var storedLastExportDirectory: String = ""
     
     /// Debug-only: draw detected face rectangles over the slideshow image.
     /// This property exists in Release too (always false), but the UI toggle is only shown in DEBUG builds.
@@ -109,6 +121,12 @@ class SlideshowSettings: ObservableObject {
         effect = SlideshowDocument.Settings.PostProcessingEffect(rawValue: storedEffect) ?? .none
         patina = SlideshowDocument.Settings.PatinaEffect(rawValue: storedPatina) ?? .none
         playbackDisplayID = storedPlaybackDisplayID
+
+        // Load last export directory
+        if !storedLastExportDirectory.isEmpty {
+            lastExportDirectory = URL(fileURLWithPath: storedLastExportDirectory, isDirectory: true)
+        }
+
 #if DEBUG
         debugShowFaces = storedDebugShowFaces
 #endif

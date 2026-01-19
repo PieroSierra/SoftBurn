@@ -43,12 +43,47 @@ struct ContentView: View {
     @State private var viewerStartID: UUID?
     @State private var mainWindowSize: CGSize = CGSize(width: 1000, height: 700)
     @State private var isImportingFromPhotos = false
+    @State private var isExporting = false
+    @State private var exportPreset: ExportPreset = .hd720p
+    @State private var exportProgress = ExportProgress()
 
     /// Height of our custom toolbar (used for content inset on older macOS).
     private let customToolbarHeight: CGFloat = 44
 
     var body: some View {
         contentWithModifiers
+            .onReceive(NotificationCenter.default.publisher(for: .openSlideshow)) { _ in
+                importMode = .slideshow
+                isImporting = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .saveSlideshow)) { _ in
+                beginSave()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .exportAsVideo720p)) { _ in
+                handleExport(preset: .hd720p)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .exportAsVideo480p)) { _ in
+                handleExport(preset: .sd480p)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .addFromPhotosLibrary)) { _ in
+                Task {
+                    let status = await PhotosLibraryManager.shared.requestAuthorization()
+                    if status {
+                        isImportingFromPhotos = true
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .addFromFiles)) { _ in
+                importMode = .photos
+                isImporting = true
+            }
+    }
+
+    private func handleExport(preset: ExportPreset) {
+        guard !slideshowState.isEmpty else { return }
+        guard !isExporting else { return }
+        exportPreset = preset
+        beginExport()
     }
 
     private var contentWithModifiers: some View {
@@ -103,15 +138,56 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 600)
         .toolbar {
             if #available(macOS 26.0, *) {
-                // Left side: single action group (Add, Open, Save)
+                // Left side: File and Add menus
                 ToolbarItemGroup(placement: .navigation) {
+                    // File dropdown
+                    Menu {
+                        Button(action: {
+                            importMode = .slideshow
+                            isImporting = true
+                        }) {
+                            Label("Open Slideshow...", systemImage: "folder")
+                        }
+                        
+                        Button(action: {
+                            beginSave()
+                        }) {
+                            Label("Save Slideshow...", systemImage: "square.and.arrow.down")
+                        }
+                        .disabled(slideshowState.isEmpty)
+                        
+                        Divider()
+                        
+                        Menu {
+                            Button(action: {
+                                handleExport(preset: .hd720p)
+                            }) {
+                                Label("720p HD...", systemImage: "square.and.arrow.down")
+                            }
+                            
+                            Button(action: {
+                                handleExport(preset: .sd480p)
+                            }) {
+                                Label("480p SD...", systemImage: "square.and.arrow.down")
+                            }
+                        } label: {
+                            Label("Export as Video", systemImage: "film")
+                        }
+                        .disabled(slideshowState.isEmpty)
+                    } label: {
+                        Label("File", systemImage: "doc")
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .help("File operations")
+                    .disabled(isShowingViewer)
+                    
+                    // Add dropdown
                     Menu {
                         Button(action: {
                             Task {
                                 let status = await PhotosLibraryManager.shared.requestAuthorization()
                                 if status {
                                     isImportingFromPhotos = true
-                                } else {
                                 }
                             }
                         }) {
@@ -125,29 +201,16 @@ struct ContentView: View {
                             Label("From Files...", systemImage: "doc")
                         }
                     } label: {
-                        Label("Add", systemImage: "plus")
+                        Label("Add Media", systemImage: "plus")
                     }
                     .labelStyle(.titleAndIcon)
                     .help("Add media")
                     .disabled(isShowingViewer)
+                    
 
-                    Button(action: {
-                        importMode = .slideshow
-                        isImporting = true
-                    }) {
-                        Image(systemName: "folder")
-                    }
-                    .help("Open slideshow")
-                    .disabled(isShowingViewer)
-
-                    Button(action: {
-                        beginSave()
-                    }) {
-                        Image(systemName: "square.and.arrow.down")
-                    }
-                    .help("Save slideshow")
-                    .disabled(slideshowState.isEmpty || isShowingViewer)
                 }
+                
+                
 
                 // Center status
                 ToolbarItem(placement: .principal) {
@@ -359,6 +422,24 @@ struct ContentView: View {
                 lastSelectedIndex = firstIdx
             }
         }
+        // Export modal sheet
+        .sheet(isPresented: $isExporting) {
+            ExportModalView(
+                progress: exportProgress,
+                onCancel: {
+                    exportProgress.cancel()
+                },
+                onRevealInFinder: {
+                    if let url = exportProgress.outputURL {
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                    }
+                    isExporting = false
+                },
+                onDismiss: {
+                    isExporting = false
+                }
+            )
+        }
     }
     
     // MARK: - Slideshow Window
@@ -476,18 +557,62 @@ struct ContentView: View {
     }
     
     // MARK: - Toolbar
-    
+
     private var toolbar: some View {
         HStack {
-            // Left side: single action group (Add, Open, Save)
+            // Left side: File and Add menus
             HStack(spacing: 12) {
+                // File dropdown
+                Menu {
+                    Button(action: {
+                        importMode = .slideshow
+                        isImporting = true
+                    }) {
+                        Label("Open Slideshow...", systemImage: "folder")
+                    }
+
+                    Button(action: {
+                        beginSave()
+                    }) {
+                        Label("Save Slideshow...", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(slideshowState.isEmpty)
+
+                    Divider()
+
+                    Menu {
+                        Button(action: {
+                            handleExport(preset: .hd720p)
+                        }) {
+                            Label("720p HD...", systemImage: "square.and.arrow.down")
+                        }
+
+                        Button(action: {
+                            handleExport(preset: .sd480p)
+                        }) {
+                            Label("480p SD...", systemImage: "square.and.arrow.down")
+                        }
+                    } label: {
+                        Label("Export as Video", systemImage: "film")
+                    }
+                    .disabled(slideshowState.isEmpty)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc")
+                            .frame(width: 20, height: 20)
+                        Text("File")
+                    }
+                }
+                .help("File operations")
+                .disabled(isShowingViewer)
+
+                // Add dropdown
                 Menu {
                     Button(action: {
                         Task {
                             let status = await PhotosLibraryManager.shared.requestAuthorization()
                             if status {
                                 isImportingFromPhotos = true
-                            } else {
                             }
                         }
                     }) {
@@ -509,26 +634,6 @@ struct ContentView: View {
                 }
                 .help("Add media")
                 .disabled(isShowingViewer)
-
-                Button(action: {
-                    importMode = .slideshow
-                    isImporting = true
-                }) {
-                    Image(systemName: "folder")
-                        .frame(width: 20, height: 20)
-                }
-                .help("Open slideshow")
-                .disabled(isShowingViewer)
-
-                Button(action: {
-                    beginSave()
-                }) {
-                    Image(systemName: "square.and.arrow.down")
-                        .frame(width: 20, height: 20)
-                }
-                .help("Save slideshow")
-                .disabled(slideshowState.isEmpty || isShowingViewer)
-
             }
             
             Spacer()
@@ -763,6 +868,77 @@ struct ContentView: View {
             exportDocument = fileDoc
 
             isSaving = true
+        }
+    }
+
+    // MARK: - Export
+
+    @MainActor
+    private func beginExport() {
+        guard !slideshowState.isEmpty else { return }
+
+        // Show save panel to select output location
+        let savePanel = NSSavePanel()
+        savePanel.title = "Export Video"
+        savePanel.nameFieldLabel = "Export As:"
+        savePanel.nameFieldStringValue = "My Slideshow"
+        savePanel.allowedContentTypes = [.quickTimeMovie]
+        savePanel.canCreateDirectories = true
+
+        // Use last export directory if available
+        if let lastDir = settings.lastExportDirectory {
+            savePanel.directoryURL = lastDir
+        }
+
+        savePanel.begin { [self] response in
+            guard response == .OK, let outputURL = savePanel.url else { return }
+
+            // Save the directory for next time
+            settings.lastExportDirectory = outputURL.deletingLastPathComponent()
+
+            // Reset progress and start export
+            exportProgress.reset()
+            isExporting = true
+
+            // Start the export process
+            Task {
+                await performExport(to: outputURL)
+            }
+        }
+    }
+
+    @MainActor
+    private func performExport(to outputURL: URL) async {
+        let photos = slideshowState.photos
+
+        do {
+            // Remove existing file if present (NSSavePanel already confirmed overwrite)
+            if FileManager.default.fileExists(atPath: outputURL.path) {
+                try FileManager.default.removeItem(at: outputURL)
+            }
+
+            let coordinator = ExportCoordinator(
+                photos: photos,
+                settings: settings,
+                preset: exportPreset,
+                progress: exportProgress
+            )
+
+            try await coordinator.export(to: outputURL)
+
+            // Success
+            await MainActor.run {
+                exportProgress.outputURL = outputURL
+                exportProgress.phase = .completed
+            }
+        } catch {
+            if exportProgress.isCancelled {
+                exportProgress.phase = .cancelled
+                // Clean up partial file
+                try? FileManager.default.removeItem(at: outputURL)
+            } else {
+                exportProgress.phase = .failed(error.localizedDescription)
+            }
         }
     }
 }
