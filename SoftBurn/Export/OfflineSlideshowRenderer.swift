@@ -13,6 +13,7 @@ import MetalKit
 import AVFoundation
 import CoreVideo
 import SwiftUI
+import Photos
 
 /// Offline renderer for export - renders frames to CVPixelBuffer for AVAssetWriter
 final class OfflineSlideshowRenderer {
@@ -356,12 +357,39 @@ final class OfflineSlideshowRenderer {
         )
     }
 
-    /// Load a texture from a MediaItem URL
+    /// Load a texture from a MediaItem (handles both filesystem and Photos Library)
+    func loadTexture(from item: MediaItem) async -> MTLTexture? {
+        switch item.source {
+        case .filesystem(let url):
+            return loadTextureFromFilesystem(url: url)
+        case .photosLibrary(let localID, _):
+            return await loadTextureFromPhotosLibrary(localIdentifier: localID)
+        }
+    }
+
+    /// Legacy method for backward compatibility with URL-based loading
     func loadTexture(from url: URL, rotationDegrees: Int) -> MTLTexture? {
+        return loadTextureFromFilesystem(url: url)
+    }
+
+    private func loadTextureFromFilesystem(url: URL) -> MTLTexture? {
         let didStart = url.startAccessingSecurityScopedResource()
         defer { if didStart { url.stopAccessingSecurityScopedResource() } }
 
         return try? textureLoader.newTexture(URL: url, options: [
+            .SRGB: false,
+            .origin: MTKTextureLoader.Origin.topLeft,
+            .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
+            .textureStorageMode: NSNumber(value: MTLStorageMode.shared.rawValue),
+        ])
+    }
+
+    private func loadTextureFromPhotosLibrary(localIdentifier: String) async -> MTLTexture? {
+        guard let cgImage = await PhotosLibraryImageLoader.shared.loadFullResolutionCGImage(localIdentifier: localIdentifier) else {
+            return nil
+        }
+
+        return try? await textureLoader.newTexture(cgImage: cgImage, options: [
             .SRGB: false,
             .origin: MTKTextureLoader.Origin.topLeft,
             .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),

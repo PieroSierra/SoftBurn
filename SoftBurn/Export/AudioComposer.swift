@@ -4,6 +4,14 @@
 //
 //  Composes audio for video export.
 //  Mixes background music (looped with fade in/out) with video audio tracks.
+//  Uses AVAssetWriter for reliable audio encoding (AVAssetExportSession caused AudioQueue issues).
+//
+//  KNOWN ISSUE (January 2026):
+//  Photos Library video audio extraction fails with AudioQueue errors:
+//    "AudioQueueObject.cpp:3530  _Start: Error (-4) getting reporterIDs"
+//  This appears to be a sandbox/entitlement issue. Video frames from Photos Library work fine,
+//  but audio operations trigger AudioQueue initialization which fails.
+//  See /specs/video-export-spec.md for details and attempted fixes.
 //
 
 import Foundation
@@ -29,28 +37,55 @@ class AudioComposer {
 
     /// Compose all audio and return URL to temporary file (nil if no audio)
     func composeAudio() async throws -> URL? {
-        let composition = AVMutableComposition()
+        // First, check if we have any audio to compose
+        let musicURL = getMusicURL()
+        let hasMusic = musicURL != nil
 
-        var hasAudio = false
+        // Check for video audio only if enabled and there are videos
+        var hasVideoAudio = false
+        if exportSettings.playVideosWithSound {
+            for entry in timeline {
+                if entry.item.kind == .video {
+                    hasVideoAudio = true
+                    break
+                }
+            }
+        }
+
+        guard hasMusic || hasVideoAudio else {
+            return nil
+        }
+
+        // Create composition
+        let composition = AVMutableComposition()
+        var addedAudio = false
 
         // Add background music if selected
-        if let musicURL = getMusicURL() {
-            try await addBackgroundMusic(to: composition, from: musicURL)
-            hasAudio = true
+        if let url = musicURL {
+            do {
+                let added = try await addBackgroundMusic(to: composition, from: url)
+                addedAudio = addedAudio || added
+            } catch {
+                print("[AudioComposer] Warning: Failed to add background music: \(error)")
+            }
         }
 
         // Add video audio tracks if enabled
         if exportSettings.playVideosWithSound {
-            let addedVideoAudio = try await addVideoAudio(to: composition)
-            hasAudio = hasAudio || addedVideoAudio
+            do {
+                let added = try await addVideoAudio(to: composition)
+                addedAudio = addedAudio || added
+            } catch {
+                print("[AudioComposer] Warning: Failed to add video audio: \(error)")
+            }
         }
 
-        guard hasAudio else {
+        guard addedAudio else {
             return nil
         }
 
-        // Export composition to temporary file
-        return try await exportComposition(composition)
+        // Export using AVAssetWriter (more reliable than AVAssetExportSession)
+        return try await exportCompositionWithWriter(composition)
     }
 
     // MARK: - Background Music
@@ -92,18 +127,20 @@ class AudioComposer {
         return Bundle.main.url(forResource: filename, withExtension: "mp3")
     }
 
-    private func addBackgroundMusic(to composition: AVMutableComposition, from musicURL: URL) async throws {
+    private func addBackgroundMusic(to composition: AVMutableComposition, from musicURL: URL) async throws -> Bool {
         let musicAsset = AVURLAsset(url: musicURL)
 
-        guard let musicTrack = try await musicAsset.loadTracks(withMediaType: .audio).first else {
-            return
+        guard let musicTrack = try? await musicAsset.loadTracks(withMediaType: .audio).first else {
+            print("[AudioComposer] No audio track found in music file")
+            return false
         }
 
         let musicDuration = try await musicAsset.load(.duration)
         let musicDurationSeconds = CMTimeGetSeconds(musicDuration)
 
         guard musicDurationSeconds > 0 else {
-            return
+            print("[AudioComposer] Music duration is zero")
+            return false
         }
 
         // Create audio track in composition
@@ -111,7 +148,8 @@ class AudioComposer {
             withMediaType: .audio,
             preferredTrackID: kCMPersistentTrackID_Invalid
         ) else {
-            return
+            print("[AudioComposer] Failed to create composition track for music")
+            return false
         }
 
         // Loop music to fill total duration
@@ -131,12 +169,14 @@ class AudioComposer {
                     at: currentTime
                 )
             } catch {
-                print("Failed to insert music segment: \(error)")
+                print("[AudioComposer] Failed to insert music segment: \(error)")
                 break
             }
 
             currentTime = CMTimeAdd(currentTime, segmentDuration)
         }
+
+        return true
     }
 
     // MARK: - Video Audio
@@ -149,9 +189,24 @@ class AudioComposer {
                 continue
             }
 
-            let videoAsset = AVURLAsset(url: entry.item.url)
+            // Get the actual video URL (handle Photos Library items)
+            let videoURL: URL
+            switch entry.item.source {
+            case .filesystem(let url):
+                videoURL = url
+            case .photosLibrary(let localID, _):
+                // Use PHAssetResourceManager-based export (doesn't trigger AudioQueue)
+                guard let resolvedURL = await PhotosLibraryImageLoader.shared.getVideoURL(localIdentifier: localID) else {
+                    print("[AudioComposer] Failed to get URL for Photos Library video: \(localID)")
+                    continue
+                }
+                videoURL = resolvedURL
+            }
+
+            let videoAsset = AVURLAsset(url: videoURL)
 
             guard let audioTrack = try? await videoAsset.loadTracks(withMediaType: .audio).first else {
+                // Video has no audio track - skip silently
                 continue
             }
 
@@ -186,46 +241,105 @@ class AudioComposer {
                 )
                 addedAny = true
             } catch {
-                print("Failed to insert video audio: \(error)")
+                print("[AudioComposer] Failed to insert video audio: \(error)")
             }
         }
 
         return addedAny
     }
 
-    // MARK: - Export
+    // MARK: - Export with AVAssetWriter (more reliable than AVAssetExportSession)
 
-    private func exportComposition(_ composition: AVMutableComposition) async throws -> URL {
+    private func exportCompositionWithWriter(_ composition: AVMutableComposition) async throws -> URL {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("m4a")
 
-        guard let exportSession = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetAppleM4A
-        ) else {
-            throw ExportError.audioCompositionFailed("Failed to create export session")
-        }
+        // Delete existing file if present
+        try? FileManager.default.removeItem(at: tempURL)
 
-        exportSession.outputURL = tempURL
-        exportSession.outputFileType = .m4a
+        // Create writer
+        let writer = try AVAssetWriter(outputURL: tempURL, fileType: .m4a)
+
+        // Audio output settings (AAC)
+        let audioSettings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: 44100,
+            AVNumberOfChannelsKey: 2,
+            AVEncoderBitRateKey: 128000
+        ]
+
+        let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+        audioInput.expectsMediaDataInRealTime = false
+
+        guard writer.canAdd(audioInput) else {
+            throw ExportError.audioCompositionFailed("Cannot add audio input to writer")
+        }
+        writer.add(audioInput)
+
+        // Create reader
+        let reader = try AVAssetReader(asset: composition)
+
+        // Get all audio tracks and merge them
+        let audioTracks = composition.tracks(withMediaType: .audio)
+        guard !audioTracks.isEmpty else {
+            throw ExportError.audioCompositionFailed("No audio tracks in composition")
+        }
 
         // Create audio mix for volume/fades
         let audioMix = createAudioMix(for: composition)
-        exportSession.audioMix = audioMix
 
-        await exportSession.export()
+        // Use AVAssetReaderAudioMixOutput to mix all tracks with volume control
+        let readerSettings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+            AVSampleRateKey: 44100,
+            AVNumberOfChannelsKey: 2
+        ]
 
-        switch exportSession.status {
-        case .completed:
-            return tempURL
-        case .failed:
-            throw ExportError.audioCompositionFailed(exportSession.error?.localizedDescription ?? "Unknown error")
-        case .cancelled:
-            throw ExportError.cancelled
-        default:
-            throw ExportError.audioCompositionFailed("Unexpected export status")
+        let mixOutput = AVAssetReaderAudioMixOutput(audioTracks: audioTracks, audioSettings: readerSettings)
+        mixOutput.audioMix = audioMix
+
+        guard reader.canAdd(mixOutput) else {
+            throw ExportError.audioCompositionFailed("Cannot add mix output to reader")
         }
+        reader.add(mixOutput)
+
+        // Start reading and writing
+        guard reader.startReading() else {
+            throw ExportError.audioCompositionFailed("Failed to start reading: \(reader.error?.localizedDescription ?? "unknown")")
+        }
+
+        guard writer.startWriting() else {
+            throw ExportError.audioCompositionFailed("Failed to start writing: \(writer.error?.localizedDescription ?? "unknown")")
+        }
+
+        writer.startSession(atSourceTime: .zero)
+
+        // Process samples
+        while let sampleBuffer = mixOutput.copyNextSampleBuffer() {
+            while !audioInput.isReadyForMoreMediaData {
+                try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+            }
+
+            if !audioInput.append(sampleBuffer) {
+                print("[AudioComposer] Warning: Failed to append audio sample")
+            }
+        }
+
+        audioInput.markAsFinished()
+
+        // Finish writing
+        await writer.finishWriting()
+
+        if let error = writer.error {
+            throw ExportError.audioCompositionFailed("Writer error: \(error.localizedDescription)")
+        }
+
+        return tempURL
     }
 
     private func createAudioMix(for composition: AVMutableComposition) -> AVMutableAudioMix {

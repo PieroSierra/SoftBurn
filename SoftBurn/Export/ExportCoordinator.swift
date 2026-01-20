@@ -5,6 +5,16 @@
 //  Main orchestrator for video export.
 //  Builds timeline, renders frames, and writes to QuickTime .mov file.
 //
+//  ARCHITECTURE:
+//  1. Build timeline (SlideEntry array with timing, face boxes, motion offsets)
+//  2. Compose audio to temp M4A (background music + video audio)
+//  3. Set up AVAssetWriter with video + audio inputs
+//  4. Render video frames using OfflineSlideshowRenderer (Metal pipeline)
+//  5. Write audio samples from temp M4A
+//  6. Finalize MOV file
+//
+//  See /specs/video-export-spec.md for implementation details and known issues.
+//
 
 import Foundation
 import AVFoundation
@@ -119,6 +129,19 @@ actor ExportCoordinator {
         // Calculate total frames
         totalFrames = Int(ceil(totalDuration * Double(frameRate)))
 
+        // Compose audio FIRST (before setting up writer)
+        // This allows us to add audio input before starting the session
+        await MainActor.run { progress.phase = .composingAudio }
+
+        let audioComposer = AudioComposer(
+            photos: photos,
+            exportSettings: exportSettings,
+            timeline: slideTimeline,
+            totalDuration: totalDuration
+        )
+
+        let audioURL = try await audioComposer.composeAudio()
+
         let frameCount = totalFrames
         await MainActor.run {
             progress.totalFrames = frameCount
@@ -133,6 +156,41 @@ actor ExportCoordinator {
         videoInput.expectsMediaDataInRealTime = false
         writer.add(videoInput)
 
+        // Audio input (add BEFORE starting session)
+        var audioInput: AVAssetWriterInput?
+        var audioReader: AVAssetReader?
+        var audioReaderOutput: AVAssetReaderTrackOutput?
+
+        if let audioURL = audioURL {
+            let audioAsset = AVURLAsset(url: audioURL)
+            if let audioTrack = try? await audioAsset.loadTracks(withMediaType: .audio).first {
+                // Create audio input with explicit AAC settings
+                let input = AVAssetWriterInput(mediaType: .audio, outputSettings: ExportPreset.audioSettings)
+                input.expectsMediaDataInRealTime = false
+
+                if writer.canAdd(input) {
+                    writer.add(input)
+                    audioInput = input
+
+                    // Set up reader with PCM output for format conversion
+                    let reader = try AVAssetReader(asset: audioAsset)
+                    let readerSettings: [String: Any] = [
+                        AVFormatIDKey: Int(kAudioFormatLinearPCM),
+                        AVLinearPCMIsFloatKey: false,
+                        AVLinearPCMBitDepthKey: 16,
+                        AVLinearPCMIsBigEndianKey: false,
+                        AVLinearPCMIsNonInterleaved: false
+                    ]
+                    let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: readerSettings)
+                    if reader.canAdd(output) {
+                        reader.add(output)
+                        audioReader = reader
+                        audioReaderOutput = output
+                    }
+                }
+            }
+        }
+
         // Pixel buffer adaptor
         let sourceAttributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
@@ -145,13 +203,20 @@ actor ExportCoordinator {
             sourcePixelBufferAttributes: sourceAttributes
         )
 
-        // Start writing
+        // Start writing (after adding ALL inputs)
         guard writer.startWriting() else {
             throw ExportError.videoWriterFailed(writer.error?.localizedDescription ?? "Unknown error")
         }
         writer.startSession(atSourceTime: .zero)
 
-        // Render loop
+        // Start audio reader if we have one
+        if let reader = audioReader {
+            guard reader.startReading() else {
+                throw ExportError.audioCompositionFailed("Failed to start reading audio")
+            }
+        }
+
+        // Render video frames
         for frameIndex in 0..<totalFrames {
             // Check for cancellation
             if await progress.isCancelled {
@@ -187,20 +252,17 @@ actor ExportCoordinator {
         // Finish video writing
         videoInput.markAsFinished()
 
-        // Compose and add audio
-        await MainActor.run { progress.phase = .composingAudio }
-
-        // Create audio composer and add audio track
-        let audioComposer = AudioComposer(
-            photos: photos,
-            exportSettings: exportSettings,
-            timeline: slideTimeline,
-            totalDuration: totalDuration
-        )
-
-        if let audioURL = try await audioComposer.composeAudio() {
-            // Add audio to the export
-            try await addAudioTrack(to: writer, from: audioURL)
+        // Write audio samples if we have audio
+        if let audioInput = audioInput, let readerOutput = audioReaderOutput {
+            while let sampleBuffer = readerOutput.copyNextSampleBuffer() {
+                while !audioInput.isReadyForMoreMediaData {
+                    try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+                }
+                if !audioInput.append(sampleBuffer) {
+                    print("[Export] Warning: Failed to append audio sample")
+                }
+            }
+            audioInput.markAsFinished()
         }
 
         // Finalize
@@ -210,6 +272,11 @@ actor ExportCoordinator {
 
         if let error = writer.error {
             throw ExportError.videoWriterFailed(error.localizedDescription)
+        }
+
+        // Clean up temp audio file
+        if let audioURL = audioURL {
+            try? FileManager.default.removeItem(at: audioURL)
         }
 
         // Clean up
@@ -283,11 +350,11 @@ actor ExportCoordinator {
             throw ExportError.renderFailed("No slide found at time \(time)")
         }
 
-        // Load textures
-        let currentTexture = try await loadTexture(for: current.item, renderer: renderer)
+        // Load textures - pass frame time for video playback position
+        let currentTexture = try await loadTexture(for: current, frameTime: time, renderer: renderer)
         let nextTexture: MTLTexture?
         if let next = nextEntry {
-            nextTexture = try await loadTexture(for: next.item, renderer: renderer)
+            nextTexture = try await loadTexture(for: next, frameTime: time, renderer: renderer)
         } else {
             nextTexture = nil
         }
@@ -304,7 +371,8 @@ actor ExportCoordinator {
             nextTransform = calculateTransform(
                 for: next,
                 animationProgress: animationProgress,
-                isNext: true
+                isNext: true,
+                currentEntry: current  // Pass current entry for correct transition timing
             )
         } else {
             nextTransform = nil
@@ -373,10 +441,13 @@ actor ExportCoordinator {
         return (nil, nil, 0)
     }
 
-    private func loadTexture(for item: MediaItem, renderer: OfflineSlideshowRenderer) async throws -> MTLTexture? {
+    private func loadTexture(for entry: SlideEntry, frameTime: Double, renderer: OfflineSlideshowRenderer) async throws -> MTLTexture? {
+        let item = entry.item
+
         switch item.kind {
         case .photo:
-            return renderer.loadTexture(from: item.url, rotationDegrees: item.rotationDegrees)
+            // Use the new MediaItem-based loading that handles both filesystem and Photos Library
+            return await renderer.loadTexture(from: item)
 
         case .video:
             // Get or create video reader
@@ -384,40 +455,112 @@ actor ExportCoordinator {
             if let existing = videoReaders[item.id] {
                 reader = existing
             } else {
-                reader = try await VideoFrameReader(url: item.url, device: device)
+                // For Photos Library videos, we need to get the actual file URL
+                let videoURL: URL
+                switch item.source {
+                case .filesystem(let url):
+                    videoURL = url
+                case .photosLibrary(let localID, _):
+                    guard let url = await PhotosLibraryImageLoader.shared.getVideoURL(localIdentifier: localID) else {
+                        return nil
+                    }
+                    videoURL = url
+                }
+                reader = try await VideoFrameReader(url: videoURL, device: device)
                 videoReaders[item.id] = reader
             }
 
-            // Find the local time within this video
-            guard let entry = slideTimeline.first(where: { $0.item.id == item.id }) else {
-                return nil
-            }
-
-            // Calculate video playback time
-            // For now, use a simple approach - videos play from start
-            // More sophisticated timing would track actual video position
-            return try await reader.frame(atSeconds: 0)
+            // Calculate video playback time:
+            // - Video starts playing when it becomes visible (at entry.startTime - transitionDuration for "next" slot)
+            // - For simplicity, we use the time relative to when the slide's cycle starts
+            // - The video should play from the beginning when the slide starts its cycle
+            let videoTime = max(0, frameTime - entry.startTime)
+            return try await reader.frame(atSeconds: videoTime)
         }
     }
 
     private func calculateTransform(
         for entry: SlideEntry,
         animationProgress: Double,
-        isNext: Bool
+        isNext: Bool,
+        currentEntry: SlideEntry? = nil
     ) -> MediaTransform {
         // Ken Burns parameters
         let startScale: Double = 1.0
         let endScale: Double = 1.4
 
-        // Calculate motion elapsed
-        let cycleElapsed = animationProgress * entry.totalDuration
-        let motionTotal = entry.holdDuration + (2.0 * Self.transitionDuration)
+        /*
+         * MOTION TIMING for Ken Burns effect:
+         *
+         * The motion spans the entire visible duration of the slide:
+         * - Starts when the slide first becomes visible (incoming transition)
+         * - Ends when the slide finishes (hold + outgoing transition)
+         *
+         * For "current" slot: motion is relative to current slide's cycle
+         * - cycleElapsed starts at 0
+         * - motionElapsed = cycleElapsed + transitionDuration (from previous slide)
+         *
+         * For "next" slot: motion is relative to CURRENT slide's cycle during transition
+         * - The next slide becomes visible during current's transition phase
+         * - Its motion should start immediately when it begins fading in
+         *
+         * LAST SLIDE FIX: When the last slide has transitionDuration=0 (no outgoing),
+         * the motion total is: incoming transition + holdDuration (not 2x transition)
+         */
 
         let motionElapsed: Double
+        let motionTotal: Double
+
         if isNext {
-            motionElapsed = max(0, cycleElapsed - entry.holdDuration)
+            /*
+             * For "next" slot: Motion starts when the slide begins fading in.
+             * This happens during the CURRENT (outgoing) slide's transition phase.
+             *
+             * animationProgress is relative to the CURRENT slide's cycle.
+             * entry is the NEXT slide's SlideEntry.
+             * currentEntry (if provided) is the CURRENT slide's SlideEntry.
+             *
+             * Motion total = incomingTransition + holdDuration + outgoingTransition
+             * The incoming transition is from the PREVIOUS slide (the current slide's
+             * outgoing transition = Self.transitionDuration), and outgoing is
+             * entry.transitionDuration (0 for last slide).
+             */
+            let incomingTransition = Self.transitionDuration  // Always 2.0s
+            motionTotal = incomingTransition + entry.holdDuration + entry.transitionDuration
+
+            // Calculate how far into the current slide's transition phase we are
+            // animationProgress ranges from 0.0 to 1.0 over the current slide's cycle
+            // Transition starts at: currentEntry.holdDuration / currentEntry.totalDuration
+            let transitionProgress: Double
+            if let current = currentEntry, current.totalDuration > 0 {
+                let transitionStart = current.holdDuration / current.totalDuration
+                if animationProgress >= transitionStart {
+                    let transitionPhaseDuration = 1.0 - transitionStart
+                    if transitionPhaseDuration > 0 {
+                        transitionProgress = min(1.0, (animationProgress - transitionStart) / transitionPhaseDuration)
+                    } else {
+                        transitionProgress = 1.0
+                    }
+                } else {
+                    transitionProgress = 0.0
+                }
+            } else {
+                // Fallback if no currentEntry provided
+                transitionProgress = 0.0
+            }
+
+            // Motion starts at transitionProgress = 0 (when "next" first appears)
+            // transitionProgress goes 0→1 during the incoming transition (2s)
+            motionElapsed = transitionProgress * incomingTransition
         } else {
-            motionElapsed = cycleElapsed + Self.transitionDuration
+            // For "current" slot
+            // motionTotal = incomingTransition + holdDuration + outgoingTransition
+            // This MUST match the "next" slot calculation for continuity when
+            // a slide transitions from "next" to "current"
+            let incomingTransition = Self.transitionDuration  // Always 2.0s
+            let cycleElapsed = animationProgress * entry.totalDuration
+            motionTotal = incomingTransition + entry.holdDuration + entry.transitionDuration
+            motionElapsed = cycleElapsed + incomingTransition
         }
 
         let motionProgress = motionTotal > 0 ? min(1.0, max(0.0, motionElapsed / motionTotal)) : 1.0
@@ -445,42 +588,6 @@ actor ExportCoordinator {
             faceBoxes: entry.faceBoxes,
             isVideo: entry.item.kind == .video
         )
-    }
-
-    // MARK: - Audio
-
-    private func addAudioTrack(to writer: AVAssetWriter, from audioURL: URL) async throws {
-        let audioAsset = AVURLAsset(url: audioURL)
-
-        guard let audioTrack = try await audioAsset.loadTracks(withMediaType: .audio).first else {
-            return // No audio to add
-        }
-
-        let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: ExportPreset.audioSettings)
-        audioInput.expectsMediaDataInRealTime = false
-
-        guard writer.canAdd(audioInput) else {
-            return
-        }
-        writer.add(audioInput)
-
-        // Read and write audio samples
-        let reader = try AVAssetReader(asset: audioAsset)
-        let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: nil)
-        reader.add(output)
-
-        guard reader.startReading() else {
-            throw ExportError.audioCompositionFailed("Failed to start reading audio")
-        }
-
-        while let sampleBuffer = output.copyNextSampleBuffer() {
-            while !audioInput.isReadyForMoreMediaData {
-                try await Task.sleep(nanoseconds: 10_000_000)
-            }
-            audioInput.append(sampleBuffer)
-        }
-
-        audioInput.markAsFinished()
     }
 
     // MARK: - Helpers
