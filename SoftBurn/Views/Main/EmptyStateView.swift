@@ -22,7 +22,7 @@ struct EmptyStateView: View {
                 .font(.title2)
                 .foregroundColor(.primary)
             
-            Text("Drag photos or folders here, or use the Add button")
+            Text("Drag photos or folders here, or use the Add Media button")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

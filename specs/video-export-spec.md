@@ -42,6 +42,8 @@ On selecting **Export as Video**, present a submenu with fixed presets:
 
 `Export as Video → `
 
+`├ (icon:square.and.arrow.down) QuickTime (1080p)…`
+
 `├ (icon:square.and.arrow.down) QuickTime (720p)… `
 
 `└ (icon:square.and.arrow.down) QuickTime (480p)…`
@@ -51,7 +53,7 @@ On selecting **Export as Video**, present a submenu with fixed presets:
 - QuickTime `.mov` only (v1)
 - No codec, bitrate, or frame-rate controls exposed in v1
 - Presets exist to keep scope limited and UX simple
-- Default / recommended preset: **720p**
+- Default / recommended preset: **1080p**
 
 ---
 

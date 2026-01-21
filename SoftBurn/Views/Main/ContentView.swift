@@ -59,6 +59,9 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .saveSlideshow)) { _ in
                 beginSave()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .exportAsVideo1080p)) { _ in
+                handleExport(preset: .hd1080p)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .exportAsVideo720p)) { _ in
                 handleExport(preset: .hd720p)
             }
@@ -164,11 +167,17 @@ struct ContentView: View {
                         
                         Menu {
                             Button(action: {
+                                handleExport(preset: .hd1080p)
+                            }) {
+                                Label("1080p Full HD...", systemImage: "square.and.arrow.down")
+                            }
+
+                            Button(action: {
                                 handleExport(preset: .hd720p)
                             }) {
                                 Label("720p HD...", systemImage: "square.and.arrow.down")
                             }
-                            
+
                             Button(action: {
                                 handleExport(preset: .sd480p)
                             }) {
@@ -593,6 +602,12 @@ struct ContentView: View {
                     Divider()
 
                     Menu {
+                        Button(action: {
+                            handleExport(preset: .hd1080p)
+                        }) {
+                            Label("1080p Full HD...", systemImage: "square.and.arrow.down")
+                        }
+
                         Button(action: {
                             handleExport(preset: .hd720p)
                         }) {

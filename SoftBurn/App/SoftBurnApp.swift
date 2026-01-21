@@ -11,6 +11,7 @@ import SwiftUI
 extension Notification.Name {
     static let openSlideshow = Notification.Name("SoftBurn.openSlideshow")
     static let saveSlideshow = Notification.Name("SoftBurn.saveSlideshow")
+    static let exportAsVideo1080p = Notification.Name("SoftBurn.exportAsVideo1080p")
     static let exportAsVideo720p = Notification.Name("SoftBurn.exportAsVideo720p")
     static let exportAsVideo480p = Notification.Name("SoftBurn.exportAsVideo480p")
     static let addFromPhotosLibrary = Notification.Name("SoftBurn.addFromPhotosLibrary")
@@ -76,18 +77,24 @@ struct SoftBurnApp: App {
 
                 Menu {
                     Button(action: {
+                        NotificationCenter.default.post(name: .exportAsVideo1080p, object: nil)
+                    }) {
+                        Label("1080p Full HD...", systemImage: "square.and.arrow.down")
+                    }
+                    .keyboardShortcut("e", modifiers: .command)
+
+                    Button(action: {
                         NotificationCenter.default.post(name: .exportAsVideo720p, object: nil)
                     }) {
                         Label("720p HD...", systemImage: "square.and.arrow.down")
                     }
-                    .keyboardShortcut("e", modifiers: .command)
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
 
                     Button(action: {
                         NotificationCenter.default.post(name: .exportAsVideo480p, object: nil)
                     }) {
                         Label("480p SD...", systemImage: "square.and.arrow.down")
                     }
-                    .keyboardShortcut("e", modifiers: [.command, .shift])
                 } label: {
                     Label("Export as Video", systemImage: "film")
                 }

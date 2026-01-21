@@ -10,6 +10,7 @@ import AVFoundation
 
 /// Resolution presets for video export
 enum ExportPreset: String, CaseIterable, Identifiable {
+    case hd1080p = "1080p"
     case hd720p = "720p"
     case sd480p = "480p"
 
@@ -18,6 +19,7 @@ enum ExportPreset: String, CaseIterable, Identifiable {
     /// Display name for UI
     var displayName: String {
         switch self {
+        case .hd1080p: return "1080p Full HD"
         case .hd720p: return "720p HD"
         case .sd480p: return "480p SD"
         }
@@ -26,6 +28,7 @@ enum ExportPreset: String, CaseIterable, Identifiable {
     /// Video dimensions
     var width: Int {
         switch self {
+        case .hd1080p: return 1920
         case .hd720p: return 1280
         case .sd480p: return 854
         }
@@ -33,6 +36,7 @@ enum ExportPreset: String, CaseIterable, Identifiable {
 
     var height: Int {
         switch self {
+        case .hd1080p: return 1080
         case .hd720p: return 720
         case .sd480p: return 480
         }
@@ -58,8 +62,9 @@ enum ExportPreset: String, CaseIterable, Identifiable {
     /// Bit rate based on resolution
     private var bitRate: Int {
         switch self {
-        case .hd720p: return 5_000_000  // 5 Mbps
-        case .sd480p: return 2_500_000  // 2.5 Mbps
+        case .hd1080p: return 10_000_000  // 10 Mbps
+        case .hd720p: return 5_000_000    // 5 Mbps
+        case .sd480p: return 2_500_000    // 2.5 Mbps
         }
     }
 
