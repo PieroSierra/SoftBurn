@@ -151,19 +151,12 @@ Export is **blocking** by design.
 
 ### Audio
 
-> **⚠️ AUDIO CURRENTLY DISABLED (January 2026)**
->
-> Exported videos are **silent**. Background music and video audio are not included.
-> See "Known Issues & Limitations" section for technical details and future fix plan.
-
-The spec below describes the *intended* behavior when audio is re-enabled:
-
 - Audio is rendered **offline**, not in real time
 - Export includes:
-  - Background music (if enabled)
-  - Audio tracks from video clips (if enabled)
+  - Background music (if enabled) - uses **musicVolume** setting with fade in/out
+  - Audio tracks from video clips (if enabled) - always at **100% volume**
 - Audio is mixed into a **single stereo track**
-- Audio timing must remain in sync with rendered frames
+- Two-phase export: video rendered first, then muxed with audio
 
 ⚠️ Do not rely on system audio capture.
 
@@ -239,15 +232,18 @@ You are expected to:
 
 ### Architecture Overview
 
-The export feature is implemented across these files:
+The export feature uses a **two-phase architecture** to avoid AVAssetWriter interleaved writing issues:
+
+**Phase 1 - Render Video**: Metal pipeline renders frames to a temp video-only MOV file
+**Phase 2 - Mux Audio**: AVMutableComposition + AVAssetExportSession combines video + audio
 
 | File | Purpose |
 |------|---------|
-| `ExportCoordinator.swift` | Main orchestrator - builds timeline, renders frames, writes video |
+| `ExportCoordinator.swift` | Main orchestrator - builds timeline, coordinates phases, manages temp files |
 | `OfflineSlideshowRenderer.swift` | Metal renderer for export - reuses shader pipelines from `MetalSlideshowRenderer` |
-| `AudioComposer.swift` | Composes background music + video audio (currently unused - audio disabled) |
+| `AudioComposer.swift` | Composes background music + video audio into temp M4A file with volume control |
 | `VideoFrameReader.swift` | Extracts frames from video clips at specific timestamps |
-| `ExportPreset.swift` | Defines 720p/480p presets with codec settings |
+| `ExportPreset.swift` | Defines 1080p/720p/480p presets with codec settings |
 | `ExportProgress.swift` | Observable progress state for UI |
 | `ExportModalView.swift` | Modal UI during export |
 
@@ -268,21 +264,30 @@ The export feature is implemented across these files:
 
 3. **Video Writing**: `AVAssetWriter` with pixel buffer adaptor appends rendered frames
 
-### Audio Pipeline (DISABLED)
+### Audio Pipeline
 
-Audio encoding is currently disabled due to AVAssetWriter hang issues with sequential writing pattern. See "Known Issues & Limitations" section for details.
-
-When re-enabled, the pipeline will:
+The audio pipeline uses a **two-phase export** approach to avoid AVAssetWriter interleaved writing issues:
 
 1. **Composition**: `AudioComposer` creates `AVMutableComposition` with:
    - Background music track (looped to fill duration)
    - Video audio tracks (inserted at slide start times)
 
-2. **Mixing**: `AVAssetReaderAudioMixOutput` mixes all tracks with volume fades
+2. **Volume Control**: `AVMutableAudioMix` applies per-track volume:
+   - **Music**: Uses `musicVolume` setting (0-100%) with 1.5s fade in, 0.75s fade out
+   - **Video audio**: Always 100% volume (no fades)
 
-3. **Export**: `AVAssetWriter` encodes mixed PCM to AAC in temp M4A file
+3. **Pre-export**: `AVAssetReaderAudioMixOutput` mixes tracks → `AVAssetWriter` encodes to temp M4A (AAC stereo, 128kbps)
 
-4. **Integration**: Main export reads temp M4A and writes samples interleaved with video frames
+4. **Video Rendering**: `ExportCoordinator.renderVideoOnly()` renders frames to temp video-only MOV (H.264)
+
+5. **Muxing**: `AVMutableComposition` + `AVAssetExportSession` (HighestQuality preset) combines:
+   - Video track from temp MOV
+   - Audio track from temp M4A
+   - Output: Final MOV with both tracks
+
+6. **Cleanup**: Temp files deleted after export completes
+
+This approach separates video rendering from audio handling, leveraging AVFoundation's composition APIs which handle track muxing internally without timing issues.
 
 ### Ken Burns Motion Timing
 
@@ -305,30 +310,6 @@ For the last slide (no outgoing transition), `outgoingTransition = 0`, which is 
 
 ## Known Issues & Limitations
 
-### Audio Export (DISABLED - January 2026)
-
-**Status**: Audio encoding is temporarily disabled.
-
-**Root Cause**: The sequential audio/video writing pattern causes AVAssetWriter to hang indefinitely. The original implementation wrote all video frames first, then attempted to write audio samples after marking video input as finished. This fails because:
-
-1. AVAssetWriter expects **interleaved writes** with overlapping time ranges
-2. After `videoInput.markAsFinished()`, the writer's timeline state changes
-3. `audioInput.isReadyForMoreMediaData` never becomes true
-4. The infinite polling loop (`while !isReadyForMoreMediaData`) has no escape condition
-
-The hang occurs at exactly frame 36 (1.2 seconds at 30fps), which is when the audio writing loop starts executing.
-
-**Note**: This issue has NOTHING to do with Photos Library videos. It affects any export with sound/music enabled, even with only filesystem photos.
-
-**Workaround**: Audio encoding has been removed from `ExportCoordinator`. Exported videos are silent.
-
-**Future Fix**: Implement proper interleaved audio/video writing:
-1. Pre-compose audio to temp file (AudioComposer already works)
-2. Create a combined timeline with both video frames and audio samples sorted by presentation time
-3. Write samples to appropriate input in timestamp order
-4. Both inputs receive data concurrently (overlapping time ranges)
-5. Mark both as finished, then `finishWriting()`
-
 ### Video Playback Timing
 
 Videos play from the beginning of their slide's cycle. There's no support for:
@@ -343,19 +324,29 @@ Large slideshows with many high-resolution photos may consume significant memory
 - Releasing textures after use
 - Progress-based memory cleanup
 
+### Photos Library Video Audio (Resolved History)
+
+Previous issue (January 2026): Photos Library video audio extraction caused AudioQueue errors. This was resolved by pre-exporting Photos Library videos to temp files before audio composition.
+
 ---
 
 ## Testing Checklist
 
-- [x] Export with filesystem photos only (works, silent)
-- [x] Export with Photos Library photos only (works, silent)
-- [x] Export with filesystem videos (works, video plays, silent)
-- [x] Export with Photos Library videos (works, video plays, silent)
+- [x] Export with filesystem photos only
+- [x] Export with Photos Library photos only
+- [x] Export with filesystem videos (video plays)
+- [x] Export with Photos Library videos (video plays)
+- [x] Export with background music only
+- [ ] Export with video audio only (playVideosWithSound enabled)
+- [ ] Export with background music + video audio
+- [ ] Export without audio (no music, sound disabled) - should work as video-only
+- [ ] Verify music volume setting is respected
 - [ ] Export with various transition styles (plain, crossfade, zoom)
 - [ ] Export with patina effects (35mm, aged film, VHS)
 - [ ] Export with color effects (monochrome, silvertone, sepia)
-- [x] Cancel during export (works - stops immediately)
+- [x] Cancel during export (stops immediately, cleans up temp files)
 - [ ] Export very long slideshow (memory stability)
+- [ ] Verify audio sync matches playback
 
-**Verified January 2026**: Export completes without hanging. No audio in output (as expected with audio disabled).
+**Implementation**: Two-phase export (video render + audio mux) completed January 2026.
 

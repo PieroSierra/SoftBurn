@@ -17,7 +17,9 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(find:*)",
-      "Skill(superpowers:executing-plans)"
+      "Skill(superpowers:executing-plans)",
+      "Bash(/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild:*)",
+      "WebFetch(domain:stackoverflow.com)"
     ]
   }
 }

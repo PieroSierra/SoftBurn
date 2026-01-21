@@ -4,14 +4,13 @@
 //
 //  Composes audio for video export.
 //  Mixes background music (looped with fade in/out) with video audio tracks.
-//  Uses AVAssetWriter for reliable audio encoding (AVAssetExportSession caused AudioQueue issues).
 //
-//  KNOWN ISSUE (January 2026):
-//  Photos Library video audio extraction fails with AudioQueue errors:
-//    "AudioQueueObject.cpp:3530  _Start: Error (-4) getting reporterIDs"
-//  This appears to be a sandbox/entitlement issue. Video frames from Photos Library work fine,
-//  but audio operations trigger AudioQueue initialization which fails.
-//  See /specs/video-export-spec.md for details and attempted fixes.
+//  Volume Handling:
+//  - Background music: Uses musicVolume setting (0-100%) with fade in/out
+//  - Video audio: Always 100% volume (no fades)
+//
+//  Outputs to a temp M4A file which is then muxed with the rendered video
+//  by ExportCoordinator using AVMutableComposition + AVAssetExportSession.
 //
 
 import Foundation
@@ -23,9 +22,13 @@ class AudioComposer {
     private let exportSettings: ExportSettings
     private let timeline: [SlideEntry]
     private let totalDuration: Double
-    private let videoURLs: [UUID: URL]  // NEW: Pre-exported video URLs
+    private let videoURLs: [UUID: URL]
 
-    // Fade durations
+    // Track which composition tracks are music vs video audio
+    private var musicTrack: AVMutableCompositionTrack?
+    private var videoAudioTracks: [AVMutableCompositionTrack] = []
+
+    // Fade durations for music
     private static let fadeInDuration: Double = 1.5
     private static let fadeOutDuration: Double = 0.75
 
@@ -39,6 +42,10 @@ class AudioComposer {
 
     /// Compose all audio and return URL to temporary file (nil if no audio)
     func composeAudio() async throws -> URL? {
+        // Reset track references
+        musicTrack = nil
+        videoAudioTracks = []
+
         // First, check if we have any audio to compose
         let musicURL = getMusicURL()
         let hasMusic = musicURL != nil
@@ -132,7 +139,7 @@ class AudioComposer {
     private func addBackgroundMusic(to composition: AVMutableComposition, from musicURL: URL) async throws -> Bool {
         let musicAsset = AVURLAsset(url: musicURL)
 
-        guard let musicTrack = try? await musicAsset.loadTracks(withMediaType: .audio).first else {
+        guard let sourceTrack = try? await musicAsset.loadTracks(withMediaType: .audio).first else {
             print("[AudioComposer] No audio track found in music file")
             return false
         }
@@ -154,6 +161,9 @@ class AudioComposer {
             return false
         }
 
+        // Store reference for volume control
+        musicTrack = compositionTrack
+
         // Loop music to fill total duration
         var currentTime: CMTime = .zero
         let targetDuration = CMTime(seconds: totalDuration, preferredTimescale: 600)
@@ -167,7 +177,7 @@ class AudioComposer {
             do {
                 try compositionTrack.insertTimeRange(
                     timeRange,
-                    of: musicTrack,
+                    of: sourceTrack,
                     at: currentTime
                 )
             } catch {
@@ -178,6 +188,7 @@ class AudioComposer {
             currentTime = CMTimeAdd(currentTime, segmentDuration)
         }
 
+        print("[AudioComposer] Added background music with volume \(exportSettings.musicVolume)%")
         return true
     }
 
@@ -191,13 +202,12 @@ class AudioComposer {
                 continue
             }
 
-            // NEW: Use pre-exported URL from map instead of calling getVideoURL()
+            // Use pre-exported URL from map
             guard let videoURL = videoURLs[entry.item.id] else {
                 print("[AudioComposer] Warning: No pre-exported URL for video: \(entry.item.id)")
                 continue
             }
 
-            // Use the pre-exported URL directly (no more async Photos Library access)
             let videoAsset = AVURLAsset(url: videoURL)
 
             guard let audioTrack = try? await videoAsset.loadTracks(withMediaType: .audio).first else {
@@ -212,6 +222,9 @@ class AudioComposer {
             ) else {
                 continue
             }
+
+            // Store reference for volume control (video audio at 100%)
+            videoAudioTracks.append(compositionTrack)
 
             // Calculate video audio duration
             let videoDuration = try await videoAsset.load(.duration)
@@ -235,6 +248,7 @@ class AudioComposer {
                     at: insertTime
                 )
                 addedAny = true
+                print("[AudioComposer] Added video audio at \(entry.startTime)s (100% volume)")
             } catch {
                 print("[AudioComposer] Failed to insert video audio: \(error)")
             }
@@ -337,22 +351,25 @@ class AudioComposer {
         return tempURL
     }
 
+    /// Creates audio mix with volume settings:
+    /// - Music track: Uses musicVolume setting with fade in/out
+    /// - Video audio tracks: 100% volume (no fades)
     private func createAudioMix(for composition: AVMutableComposition) -> AVMutableAudioMix {
         let audioMix = AVMutableAudioMix()
         var inputParameters: [AVMutableAudioMixInputParameters] = []
 
-        // Get the first audio track (background music)
-        if let musicTrack = composition.tracks(withMediaType: .audio).first {
-            let params = AVMutableAudioMixInputParameters(track: musicTrack)
+        // Apply volume to music track (with fades)
+        if let track = musicTrack {
+            let params = AVMutableAudioMixInputParameters(track: track)
 
-            // Apply music volume
+            // Convert musicVolume (0-100) to float (0.0-1.0)
             let volume = Float(exportSettings.musicVolume) / 100.0
 
             // Fade in at start
             let fadeInEnd = CMTime(seconds: Self.fadeInDuration, preferredTimescale: 600)
             params.setVolumeRamp(fromStartVolume: 0, toEndVolume: volume, timeRange: CMTimeRange(start: .zero, duration: fadeInEnd))
 
-            // Hold volume
+            // Hold volume after fade in
             let holdEnd = CMTime(seconds: totalDuration - Self.fadeOutDuration, preferredTimescale: 600)
             if CMTimeCompare(fadeInEnd, holdEnd) < 0 {
                 params.setVolume(volume, at: fadeInEnd)
@@ -370,6 +387,13 @@ class AudioComposer {
                 )
             }
 
+            inputParameters.append(params)
+        }
+
+        // Apply 100% volume to video audio tracks (no fades)
+        for track in videoAudioTracks {
+            let params = AVMutableAudioMixInputParameters(track: track)
+            params.setVolume(1.0, at: .zero)  // 100% volume
             inputParameters.append(params)
         }
 

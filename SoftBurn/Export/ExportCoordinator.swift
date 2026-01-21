@@ -5,20 +5,18 @@
 //  Main orchestrator for video export.
 //  Builds timeline, renders frames, and writes to QuickTime .mov file.
 //
-//  ARCHITECTURE:
+//  ARCHITECTURE (Two-Phase Export):
 //  1. Build timeline (SlideEntry array with timing, face boxes, motion offsets)
 //  2. Pre-export Photos Library videos to temp files
-//  3. Set up AVAssetWriter with video input
-//  4. Render video frames using OfflineSlideshowRenderer (Metal pipeline)
-//  5. Finalize MOV file
+//  3. Compose audio to temp M4A file (if music or video audio enabled)
+//  4. Render video frames to temp video-only MOV file
+//  5. Mux video + audio using AVMutableComposition + AVAssetExportSession
+//  6. Clean up temp files
 //
-//  AUDIO STATUS (January 2026):
-//  Audio encoding is DISABLED. The sequential audio/video writing pattern
-//  (write all video first, then audio) causes AVAssetWriter to hang because
-//  it expects interleaved writes with overlapping time ranges. Implementing
-//  proper interleaved audio/video writing is a future improvement.
+//  This two-phase approach avoids AVAssetWriter interleaved writing issues
+//  by using AVFoundation's composition APIs for the audio muxing step.
 //
-//  See /specs/video-export-spec.md for implementation details and known issues.
+//  See /specs/video-export-spec.md for implementation details.
 //
 
 import Foundation
@@ -84,6 +82,13 @@ actor ExportCoordinator {
     // Video readers for video items
     private var videoReaders: [UUID: VideoFrameReader] = [:]
 
+    // Pre-exported video URLs (filesystem and Photos Library)
+    private var videoURLs: [UUID: URL] = [:]
+
+    // Temp file URLs for cleanup
+    private var audioTempURL: URL?
+    private var videoTempURL: URL?
+
     // Timeline
     private var slideTimeline: [SlideEntry] = []
     private var totalDuration: Double = 0
@@ -135,15 +140,22 @@ actor ExportCoordinator {
         // Check for cancellation before starting
         if await progress.isCancelled { throw ExportError.cancelled }
 
+        // Phase 1: Preparing - Build timeline
         await MainActor.run { progress.phase = .preparing }
 
         // Build timeline
         try await buildTimeline()
 
-        // Pre-export Photos Library videos to temp files (for VideoFrameReader)
+        // Pre-export Photos Library videos to temp files (for VideoFrameReader and AudioComposer)
         print("[ExportCoordinator] Pre-exporting Photos Library videos...")
-        let videoURLs = try await preparePhotosLibraryVideos()
-        _ = videoURLs  // Used by VideoFrameReader through getVideoURL()
+        videoURLs = try await preparePhotosLibraryVideos()
+
+        // Phase 2: Compose audio (if music or video audio enabled)
+        await MainActor.run { progress.phase = .composingAudio }
+        audioTempURL = try await composeAudioIfNeeded()
+        if let url = audioTempURL {
+            print("[ExportCoordinator] Audio composed to: \(url.path)")
+        }
 
         // Initialize renderer
         let renderer = try await MainActor.run {
@@ -159,19 +171,52 @@ actor ExportCoordinator {
         // Calculate total frames
         totalFrames = Int(ceil(totalDuration * Double(frameRate)))
 
-        // AUDIO DISABLED: Sequential audio/video writing pattern causes AVAssetWriter hangs.
-        // The writer expects interleaved writes with overlapping time ranges.
-        // When all video is written first then audio, the writer's timeline state
-        // changes and audioInput.isReadyForMoreMediaData never becomes true.
-        // Future: Implement interleaved audio/video writing.
-
         let frameCount = totalFrames
         await MainActor.run {
             progress.totalFrames = frameCount
             progress.phase = .renderingFrames
         }
 
-        // Create asset writer (VIDEO ONLY)
+        // Phase 3: Render video frames
+        // If we have audio, render to temp file first, then mux
+        // If no audio, render directly to output
+        let hasAudio = audioTempURL != nil
+
+        if hasAudio {
+            // Render to temp video file
+            videoTempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension("mov")
+            try await renderVideoOnly(to: videoTempURL!, renderer: renderer)
+
+            // Phase 4: Mux video + audio
+            await MainActor.run { progress.phase = .finalizing }
+            try await muxAudioWithVideo(videoURL: videoTempURL!, audioURL: audioTempURL!, outputURL: outputURL)
+        } else {
+            // Render directly to output (no audio)
+            try await renderVideoOnly(to: outputURL, renderer: renderer)
+            await MainActor.run { progress.phase = .finalizing }
+        }
+
+        // Clean up
+        await cleanup()
+    }
+
+    /// Compose audio to temp file if there's music or video audio enabled
+    private func composeAudioIfNeeded() async throws -> URL? {
+        let composer = AudioComposer(
+            photos: photos,
+            exportSettings: exportSettings,
+            timeline: slideTimeline,
+            totalDuration: totalDuration,
+            videoURLs: videoURLs
+        )
+        return try await composer.composeAudio()
+    }
+
+    /// Render video frames to output file (video-only, no audio)
+    private func renderVideoOnly(to outputURL: URL, renderer: OfflineSlideshowRenderer) async throws {
+        // Create asset writer
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
 
         // Video input
@@ -233,17 +278,77 @@ actor ExportCoordinator {
         // Finish video writing
         videoInput.markAsFinished()
 
-        // Finalize
-        await MainActor.run { progress.phase = .finalizing }
-
         await writer.finishWriting()
 
         if let error = writer.error {
             throw ExportError.videoWriterFailed(error.localizedDescription)
         }
+    }
 
-        // Clean up
-        await cleanup()
+    /// Mux video file with audio file using AVMutableComposition
+    private func muxAudioWithVideo(videoURL: URL, audioURL: URL, outputURL: URL) async throws {
+        print("[ExportCoordinator] Muxing video + audio...")
+
+        let composition = AVMutableComposition()
+
+        // Load video asset
+        let videoAsset = AVURLAsset(url: videoURL)
+        guard let videoTrack = try await videoAsset.loadTracks(withMediaType: .video).first else {
+            throw ExportError.videoWriterFailed("No video track in rendered video")
+        }
+        let videoDuration = try await videoAsset.load(.duration)
+
+        // Add video track to composition
+        guard let compositionVideoTrack = composition.addMutableTrack(
+            withMediaType: .video,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+            throw ExportError.videoWriterFailed("Failed to create video track in composition")
+        }
+
+        let videoTimeRange = CMTimeRange(start: .zero, duration: videoDuration)
+        try compositionVideoTrack.insertTimeRange(videoTimeRange, of: videoTrack, at: .zero)
+
+        // Load audio asset
+        let audioAsset = AVURLAsset(url: audioURL)
+        if let audioTrack = try await audioAsset.loadTracks(withMediaType: .audio).first {
+            // Add audio track to composition
+            guard let compositionAudioTrack = composition.addMutableTrack(
+                withMediaType: .audio,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+            ) else {
+                throw ExportError.audioCompositionFailed("Failed to create audio track in composition")
+            }
+
+            // Audio duration may differ from video - use video duration as reference
+            let audioTimeRange = CMTimeRange(start: .zero, duration: videoDuration)
+            try compositionAudioTrack.insertTimeRange(audioTimeRange, of: audioTrack, at: .zero)
+        }
+
+        // Export the composition
+        // Use passthrough for video (already H.264), will re-encode audio if needed
+        guard let exportSession = AVAssetExportSession(
+            asset: composition,
+            presetName: AVAssetExportPresetHighestQuality
+        ) else {
+            throw ExportError.videoWriterFailed("Failed to create export session")
+        }
+
+        exportSession.outputURL = outputURL
+        exportSession.outputFileType = .mov
+
+        await exportSession.export()
+
+        switch exportSession.status {
+        case .completed:
+            print("[ExportCoordinator] Muxing complete")
+        case .failed:
+            throw ExportError.videoWriterFailed("Export session failed: \(exportSession.error?.localizedDescription ?? "unknown")")
+        case .cancelled:
+            throw ExportError.cancelled
+        default:
+            throw ExportError.videoWriterFailed("Export session ended with unexpected status: \(exportSession.status.rawValue)")
+        }
     }
 
     // MARK: - Timeline Building
@@ -651,10 +756,25 @@ actor ExportCoordinator {
     }
 
     private func cleanup() async {
+        // Video reader cleanup
         for reader in videoReaders.values {
             await reader.close()
         }
         videoReaders.removeAll()
+        videoURLs.removeAll()
+
+        // Temp file cleanup
+        if let url = audioTempURL {
+            try? FileManager.default.removeItem(at: url)
+            print("[ExportCoordinator] Removed temp audio file: \(url.path)")
+        }
+        audioTempURL = nil
+
+        if let url = videoTempURL {
+            try? FileManager.default.removeItem(at: url)
+            print("[ExportCoordinator] Removed temp video file: \(url.path)")
+        }
+        videoTempURL = nil
     }
 }
 

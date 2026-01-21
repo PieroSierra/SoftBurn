@@ -1,4 +1,4 @@
-# 📸 SoftBurn — macOS Slideshow App
+# 🎬 SoftBurn — macOS Slideshow App
 
 ## 1. Product vision (read this first)
 

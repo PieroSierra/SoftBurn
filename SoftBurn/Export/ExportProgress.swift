@@ -4,6 +4,12 @@
 //
 //  Progress tracking for video export.
 //
+//  Export phases:
+//  - preparing: Building timeline, pre-exporting Photos Library videos
+//  - composingAudio: Creating temp M4A with mixed music + video audio
+//  - renderingFrames: Metal rendering video frames to temp MOV
+//  - finalizing: Muxing video + audio, cleaning up temp files
+//
 
 import Foundation
 
@@ -76,11 +82,12 @@ final class ExportProgress {
         switch phase {
         case .preparing:
             computed = 0.0
-        case .renderingFrames:
-            // Frame rendering is 80% of total progress
-            computed = 0.8 * (Double(currentFrame) / Double(totalFrames))
         case .composingAudio:
-            computed = 0.85
+            // Audio composition is ~5% of total progress
+            computed = 0.05
+        case .renderingFrames:
+            // Frame rendering + interleaved writing is 85% (from 5% to 90%)
+            computed = 0.05 + 0.85 * (Double(currentFrame) / Double(totalFrames))
         case .finalizing:
             computed = 0.95
         case .completed:

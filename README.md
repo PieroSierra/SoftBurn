@@ -10,6 +10,10 @@ There are surprisingly few free, beautiful, and simple media slideshow apps for 
 
 **SoftBurn exists to solve this problem.** It's built on a simple philosophy: slideshows should be pretty by default, easy to create, and a joy to watch. Leveraging macOS's LiquidGlass design language and Metal-accelerated rendering, SoftBurn delivers a modern, tasteful slideshow experience that feels native to the platform.
 
+It can also export slideshows as full HD videos.
+
+![VideoExport.png](/Users/pierosierra/Development/SoftBurn/VideoExport.png)
+
 ## Features
 
 - **Effortlessly Beautiful** - Intelligent face detection + Ken Burns effects make every slideshow dynamic without manual tweaking
@@ -132,8 +136,6 @@ Contributions are welcome! Please:
 2. Place feature specs in [/specs](/specs) before implementing
 3. Follow Swift concurrency best practices (@MainActor isolation)
 4. Test on multiple macOS versions if changing UI
-
- 
 
 ## License
 

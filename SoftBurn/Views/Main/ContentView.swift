@@ -730,7 +730,7 @@ struct ContentView: View {
         if slideshowState.hasSelection {
             return "  \(slideshowState.selectedCount) of \(slideshowState.photoCount) selected  "
         } else {
-            return "  \(slideshowState.photoCount) photos  "
+            return "  \(slideshowState.photoCount) items  "
         }
     }
     
