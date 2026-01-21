@@ -49,7 +49,6 @@ struct AboutView: View {
                     .frame(width: 200, height: 200)
                    .shadow(color: Color.black.opacity(0.15), radius: 18, x: 6, y: 6)
         
-
                 VStack(alignment: .leading, spacing: 12) {
                     Text(appName)
                         .font(.system(size: 40, weight: .semibold))
@@ -60,7 +59,7 @@ struct AboutView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Spacer().frame(height: 10)
+                    Spacer().frame(height: 4)
                     
                     // Tip Jar Section
                     TipJarSection(
@@ -117,6 +116,8 @@ struct TipJarSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("SoftBurn is free. Coffee is not. Buy me a cup?")
+            
+            Spacer().frame(height: 2)
             
             HStack(spacing: 24) {
                 ForEach(TipJarManager.TipTier.allCases, id: \.self) { tier in
