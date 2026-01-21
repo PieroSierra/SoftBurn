@@ -19,7 +19,9 @@
       "Bash(find:*)",
       "Skill(superpowers:executing-plans)",
       "Bash(/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild:*)",
-      "WebFetch(domain:stackoverflow.com)"
+      "WebFetch(domain:stackoverflow.com)",
+      "Bash(git check-ignore:*)",
+      "Bash(md5:*)"
     ]
   }
 }

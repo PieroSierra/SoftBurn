@@ -12,7 +12,7 @@ There are surprisingly few free, beautiful, and simple media slideshow apps for 
 
 It can also export slideshows as full HD videos.
 
-![VideoExport.png](/Users/pierosierra/Development/SoftBurn/VideoExport.png)
+![VideoExport.png](VideoExport.png)
 
 ## Features
 
