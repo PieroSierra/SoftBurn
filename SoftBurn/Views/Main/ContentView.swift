@@ -87,6 +87,10 @@ struct ContentView: View {
     }
 
     private var contentWithModifiers: some View {
+        contentPart3
+    }
+
+    private var contentPart1: some View {
         ZStack {
             // Background color for the window
             Color(NSColor.controlBackgroundColor)
@@ -267,6 +271,10 @@ struct ContentView: View {
             }
         }
         .softBurnWindowToolbarLiquidGlass()
+    }
+
+    private var contentPart2: some View {
+        contentPart1
         // Single file importer for both photos and slideshows
         .fileImporter(
             isPresented: $isImporting,
@@ -362,6 +370,10 @@ struct ContentView: View {
             .opacity(0)
             .disabled(!slideshowState.hasSelection)
         )
+    }
+
+    private var contentPart3: some View {
+        contentPart2
         // Launch slideshow when isPlayingSlideshow becomes true
         .onChange(of: isPlayingSlideshow) { _, isPlaying in
             if isPlaying {
@@ -917,7 +929,7 @@ struct ContentView: View {
                 try FileManager.default.removeItem(at: outputURL)
             }
 
-            let coordinator = ExportCoordinator(
+            let coordinator = ExportCoordinator.create(
                 photos: photos,
                 settings: settings,
                 preset: exportPreset,
@@ -937,7 +949,31 @@ struct ContentView: View {
                 // Clean up partial file
                 try? FileManager.default.removeItem(at: outputURL)
             } else {
-                exportProgress.phase = .failed(error.localizedDescription)
+                // Enhanced error messages for AudioQueue issues
+                let errorMessage: String
+                let errorDescription = error.localizedDescription
+
+                if errorDescription.contains("AudioQueue") ||
+                   errorDescription.contains("reporterIDs") ||
+                   errorDescription.contains("AudioObject") {
+                    errorMessage = """
+                    Audio export failed due to macOS sandbox restrictions with Photos Library videos.
+
+                    To include video audio:
+                    1. Open Photos.app
+                    2. Select your videos
+                    3. File → Export → Export Unmodified Original
+                    4. Add the exported videos to your slideshow
+
+                    Or, restart export and choose 'Continue Without Video Audio'.
+                    """
+                } else {
+                    errorMessage = errorDescription
+                }
+
+                await MainActor.run {
+                    exportProgress.phase = .failed(errorMessage)
+                }
             }
         }
     }

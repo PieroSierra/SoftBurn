@@ -23,16 +23,18 @@ class AudioComposer {
     private let exportSettings: ExportSettings
     private let timeline: [SlideEntry]
     private let totalDuration: Double
+    private let videoURLs: [UUID: URL]  // NEW: Pre-exported video URLs
 
     // Fade durations
     private static let fadeInDuration: Double = 1.5
     private static let fadeOutDuration: Double = 0.75
 
-    init(photos: [MediaItem], exportSettings: ExportSettings, timeline: [SlideEntry], totalDuration: Double) {
+    init(photos: [MediaItem], exportSettings: ExportSettings, timeline: [SlideEntry], totalDuration: Double, videoURLs: [UUID: URL]) {
         self.photos = photos
         self.exportSettings = exportSettings
         self.timeline = timeline
         self.totalDuration = totalDuration
+        self.videoURLs = videoURLs
     }
 
     /// Compose all audio and return URL to temporary file (nil if no audio)
@@ -189,20 +191,13 @@ class AudioComposer {
                 continue
             }
 
-            // Get the actual video URL (handle Photos Library items)
-            let videoURL: URL
-            switch entry.item.source {
-            case .filesystem(let url):
-                videoURL = url
-            case .photosLibrary(let localID, _):
-                // Use PHAssetResourceManager-based export (doesn't trigger AudioQueue)
-                guard let resolvedURL = await PhotosLibraryImageLoader.shared.getVideoURL(localIdentifier: localID) else {
-                    print("[AudioComposer] Failed to get URL for Photos Library video: \(localID)")
-                    continue
-                }
-                videoURL = resolvedURL
+            // NEW: Use pre-exported URL from map instead of calling getVideoURL()
+            guard let videoURL = videoURLs[entry.item.id] else {
+                print("[AudioComposer] Warning: No pre-exported URL for video: \(entry.item.id)")
+                continue
             }
 
+            // Use the pre-exported URL directly (no more async Photos Library access)
             let videoAsset = AVURLAsset(url: videoURL)
 
             guard let audioTrack = try? await videoAsset.loadTracks(withMediaType: .audio).first else {

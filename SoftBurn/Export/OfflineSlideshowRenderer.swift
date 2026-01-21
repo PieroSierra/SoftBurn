@@ -674,7 +674,7 @@ final class OfflineSlideshowRenderer {
 // MARK: - Supporting Types
 
 /// Transform data for a media item during rendering
-struct MediaTransform {
+struct MediaTransform: Sendable {
     let rotationDegrees: Int
     let scale: Double
     let offset: CGSize

@@ -7,11 +7,16 @@
 //
 //  ARCHITECTURE:
 //  1. Build timeline (SlideEntry array with timing, face boxes, motion offsets)
-//  2. Compose audio to temp M4A (background music + video audio)
-//  3. Set up AVAssetWriter with video + audio inputs
+//  2. Pre-export Photos Library videos to temp files
+//  3. Set up AVAssetWriter with video input
 //  4. Render video frames using OfflineSlideshowRenderer (Metal pipeline)
-//  5. Write audio samples from temp M4A
-//  6. Finalize MOV file
+//  5. Finalize MOV file
+//
+//  AUDIO STATUS (January 2026):
+//  Audio encoding is DISABLED. The sequential audio/video writing pattern
+//  (write all video first, then audio) causes AVAssetWriter to hang because
+//  it expects interleaved writes with overlapping time ranges. Implementing
+//  proper interleaved audio/video writing is a future improvement.
 //
 //  See /specs/video-export-spec.md for implementation details and known issues.
 //
@@ -22,6 +27,7 @@ import Metal
 import MetalKit
 import AppKit
 import SwiftUI
+@preconcurrency import CoreVideo
 
 /// Captured settings for export (avoid @MainActor isolation issues)
 struct ExportSettings: Sendable {
@@ -86,24 +92,42 @@ actor ExportCoordinator {
     // Transition duration (matches playback)
     private static let transitionDuration: Double = 2.0
 
-    @MainActor
-    init(photos: [MediaItem], settings: SlideshowSettings, preset: ExportPreset, progress: ExportProgress) {
+    init(photos: [MediaItem], exportSettings: ExportSettings, preset: ExportPreset, progress: ExportProgress, frameRate: Int, presetWidth: Int, presetHeight: Int, videoSettings: [String: Any], device: MTLDevice) {
         self.photos = photos
-        self.exportSettings = ExportSettings(from: settings)
+        self.exportSettings = exportSettings
         self.preset = preset
         self.progress = progress
+        self.frameRate = frameRate
+        self.presetWidth = presetWidth
+        self.presetHeight = presetHeight
+        self.videoSettings = videoSettings
+        self.device = device
+    }
 
-        // Cache preset values to avoid actor isolation issues
-        self.frameRate = preset.frameRate
-        self.presetWidth = preset.width
-        self.presetHeight = preset.height
-        self.videoSettings = preset.videoSettings
+    @MainActor
+    static func create(photos: [MediaItem], settings: SlideshowSettings, preset: ExportPreset, progress: ExportProgress) -> ExportCoordinator {
+        // Extract all values on MainActor before creating actor
+        let exportSettings = ExportSettings(from: settings)
+        let frameRate = preset.frameRate
+        let presetWidth = preset.width
+        let presetHeight = preset.height
+        let videoSettings = preset.videoSettings
 
-        // Get Metal device
         guard let device = MTLCreateSystemDefaultDevice() else {
             fatalError("Metal is not supported on this device")
         }
-        self.device = device
+
+        return ExportCoordinator(
+            photos: photos,
+            exportSettings: exportSettings,
+            preset: preset,
+            progress: progress,
+            frameRate: frameRate,
+            presetWidth: presetWidth,
+            presetHeight: presetHeight,
+            videoSettings: videoSettings,
+            device: device
+        )
     }
 
     /// Main export function
@@ -116,31 +140,30 @@ actor ExportCoordinator {
         // Build timeline
         try await buildTimeline()
 
+        // Pre-export Photos Library videos to temp files (for VideoFrameReader)
+        print("[ExportCoordinator] Pre-exporting Photos Library videos...")
+        let videoURLs = try await preparePhotosLibraryVideos()
+        _ = videoURLs  // Used by VideoFrameReader through getVideoURL()
+
         // Initialize renderer
         let renderer = try await MainActor.run {
-            try OfflineSlideshowRenderer(
+            let r = try OfflineSlideshowRenderer(
                 device: device,
                 preset: preset,
                 settings: SlideshowSettings.shared
             )
+            r.setExportStartTime(0)
+            return r
         }
-        renderer.setExportStartTime(0)
 
         // Calculate total frames
         totalFrames = Int(ceil(totalDuration * Double(frameRate)))
 
-        // Compose audio FIRST (before setting up writer)
-        // This allows us to add audio input before starting the session
-        await MainActor.run { progress.phase = .composingAudio }
-
-        let audioComposer = AudioComposer(
-            photos: photos,
-            exportSettings: exportSettings,
-            timeline: slideTimeline,
-            totalDuration: totalDuration
-        )
-
-        let audioURL = try await audioComposer.composeAudio()
+        // AUDIO DISABLED: Sequential audio/video writing pattern causes AVAssetWriter hangs.
+        // The writer expects interleaved writes with overlapping time ranges.
+        // When all video is written first then audio, the writer's timeline state
+        // changes and audioInput.isReadyForMoreMediaData never becomes true.
+        // Future: Implement interleaved audio/video writing.
 
         let frameCount = totalFrames
         await MainActor.run {
@@ -148,48 +171,13 @@ actor ExportCoordinator {
             progress.phase = .renderingFrames
         }
 
-        // Create asset writer
+        // Create asset writer (VIDEO ONLY)
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
 
         // Video input
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         videoInput.expectsMediaDataInRealTime = false
         writer.add(videoInput)
-
-        // Audio input (add BEFORE starting session)
-        var audioInput: AVAssetWriterInput?
-        var audioReader: AVAssetReader?
-        var audioReaderOutput: AVAssetReaderTrackOutput?
-
-        if let audioURL = audioURL {
-            let audioAsset = AVURLAsset(url: audioURL)
-            if let audioTrack = try? await audioAsset.loadTracks(withMediaType: .audio).first {
-                // Create audio input with explicit AAC settings
-                let input = AVAssetWriterInput(mediaType: .audio, outputSettings: ExportPreset.audioSettings)
-                input.expectsMediaDataInRealTime = false
-
-                if writer.canAdd(input) {
-                    writer.add(input)
-                    audioInput = input
-
-                    // Set up reader with PCM output for format conversion
-                    let reader = try AVAssetReader(asset: audioAsset)
-                    let readerSettings: [String: Any] = [
-                        AVFormatIDKey: Int(kAudioFormatLinearPCM),
-                        AVLinearPCMIsFloatKey: false,
-                        AVLinearPCMBitDepthKey: 16,
-                        AVLinearPCMIsBigEndianKey: false,
-                        AVLinearPCMIsNonInterleaved: false
-                    ]
-                    let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: readerSettings)
-                    if reader.canAdd(output) {
-                        reader.add(output)
-                        audioReader = reader
-                        audioReaderOutput = output
-                    }
-                }
-            }
-        }
 
         // Pixel buffer adaptor
         let sourceAttributes: [String: Any] = [
@@ -203,18 +191,11 @@ actor ExportCoordinator {
             sourcePixelBufferAttributes: sourceAttributes
         )
 
-        // Start writing (after adding ALL inputs)
+        // Start writing
         guard writer.startWriting() else {
             throw ExportError.videoWriterFailed(writer.error?.localizedDescription ?? "Unknown error")
         }
         writer.startSession(atSourceTime: .zero)
-
-        // Start audio reader if we have one
-        if let reader = audioReader {
-            guard reader.startReading() else {
-                throw ExportError.audioCompositionFailed("Failed to start reading audio")
-            }
-        }
 
         // Render video frames
         for frameIndex in 0..<totalFrames {
@@ -252,19 +233,6 @@ actor ExportCoordinator {
         // Finish video writing
         videoInput.markAsFinished()
 
-        // Write audio samples if we have audio
-        if let audioInput = audioInput, let readerOutput = audioReaderOutput {
-            while let sampleBuffer = readerOutput.copyNextSampleBuffer() {
-                while !audioInput.isReadyForMoreMediaData {
-                    try await Task.sleep(nanoseconds: 10_000_000) // 10ms
-                }
-                if !audioInput.append(sampleBuffer) {
-                    print("[Export] Warning: Failed to append audio sample")
-                }
-            }
-            audioInput.markAsFinished()
-        }
-
         // Finalize
         await MainActor.run { progress.phase = .finalizing }
 
@@ -272,11 +240,6 @@ actor ExportCoordinator {
 
         if let error = writer.error {
             throw ExportError.videoWriterFailed(error.localizedDescription)
-        }
-
-        // Clean up temp audio file
-        if let audioURL = audioURL {
-            try? FileManager.default.removeItem(at: audioURL)
         }
 
         // Clean up
@@ -340,6 +303,29 @@ actor ExportCoordinator {
         return await FaceDetectionCache.shared.cachedFaces(for: item) ?? []
     }
 
+    /// Pre-export all Photos Library videos to temp files
+    /// Returns map of MediaItem UUID to temp file URL
+    private func preparePhotosLibraryVideos() async throws -> [UUID: URL] {
+        var videoURLs: [UUID: URL] = [:]
+
+        for item in photos where item.kind == .video {
+            switch item.source {
+            case .filesystem(let url):
+                // Already have filesystem URL
+                videoURLs[item.id] = url
+            case .photosLibrary(let localID, _):
+                // Export to temp file for VideoFrameReader
+                guard let url = await PhotosLibraryImageLoader.shared.getVideoURL(localIdentifier: localID) else {
+                    throw ExportError.videoWriterFailed("Failed to export Photos Library video: \(localID)")
+                }
+                videoURLs[item.id] = url
+                print("[ExportCoordinator] Pre-exported Photos Library video: \(item.id) -> \(url.path)")
+            }
+        }
+
+        return videoURLs
+    }
+
     // MARK: - Frame Rendering
 
     private func renderFrame(at time: Double, renderer: OfflineSlideshowRenderer) async throws -> CVPixelBuffer {
@@ -382,15 +368,17 @@ actor ExportCoordinator {
         let transitionStart = current.holdDuration / current.totalDuration
 
         // Render
-        return try renderer.renderFrame(
-            currentTexture: currentTexture,
-            nextTexture: nextTexture,
-            currentTransform: currentTransform,
-            nextTransform: nextTransform,
-            animationProgress: animationProgress,
-            transitionStart: transitionStart,
-            frameTime: time
-        )
+        return try await MainActor.run {
+            try renderer.renderFrame(
+                currentTexture: currentTexture,
+                nextTexture: nextTexture,
+                currentTransform: currentTransform,
+                nextTransform: nextTransform,
+                animationProgress: animationProgress,
+                transitionStart: transitionStart,
+                frameTime: time
+            )
+        }
     }
 
     private func findSlides(at time: Double) -> (current: SlideEntry?, next: SlideEntry?, animationProgress: Double) {
@@ -450,18 +438,19 @@ actor ExportCoordinator {
             return await renderer.loadTexture(from: item)
 
         case .video:
-            // Get or create video reader
+            // Use VideoFrameReader for all videos (filesystem and Photos Library)
             let reader: VideoFrameReader
             if let existing = videoReaders[item.id] {
                 reader = existing
             } else {
-                // For Photos Library videos, we need to get the actual file URL
                 let videoURL: URL
                 switch item.source {
                 case .filesystem(let url):
                     videoURL = url
                 case .photosLibrary(let localID, _):
+                    // Use pre-exported temp file URL
                     guard let url = await PhotosLibraryImageLoader.shared.getVideoURL(localIdentifier: localID) else {
+                        print("[ExportCoordinator] Warning: No video URL for Photos Library video: \(item.id)")
                         return nil
                     }
                     videoURL = url
@@ -681,7 +670,7 @@ struct SlideEntry: Sendable {
     let startOffset: CGSize
     let endOffset: CGSize
 
-    var totalDuration: Double {
+    nonisolated var totalDuration: Double {
         holdDuration + transitionDuration
     }
 }

@@ -149,6 +149,13 @@ Export is **blocking** by design.
 
 ### Audio
 
+> **⚠️ AUDIO CURRENTLY DISABLED (January 2026)**
+>
+> Exported videos are **silent**. Background music and video audio are not included.
+> See "Known Issues & Limitations" section for technical details and future fix plan.
+
+The spec below describes the *intended* behavior when audio is re-enabled:
+
 - Audio is rendered **offline**, not in real time
 - Export includes:
   - Background music (if enabled)
@@ -236,7 +243,7 @@ The export feature is implemented across these files:
 |------|---------|
 | `ExportCoordinator.swift` | Main orchestrator - builds timeline, renders frames, writes video |
 | `OfflineSlideshowRenderer.swift` | Metal renderer for export - reuses shader pipelines from `MetalSlideshowRenderer` |
-| `AudioComposer.swift` | Composes background music + video audio into temp M4A file |
+| `AudioComposer.swift` | Composes background music + video audio (currently unused - audio disabled) |
 | `VideoFrameReader.swift` | Extracts frames from video clips at specific timestamps |
 | `ExportPreset.swift` | Defines 720p/480p presets with codec settings |
 | `ExportProgress.swift` | Observable progress state for UI |
@@ -259,7 +266,11 @@ The export feature is implemented across these files:
 
 3. **Video Writing**: `AVAssetWriter` with pixel buffer adaptor appends rendered frames
 
-### Audio Pipeline
+### Audio Pipeline (DISABLED)
+
+Audio encoding is currently disabled due to AVAssetWriter hang issues with sequential writing pattern. See "Known Issues & Limitations" section for details.
+
+When re-enabled, the pipeline will:
 
 1. **Composition**: `AudioComposer` creates `AVMutableComposition` with:
    - Background music track (looped to fill duration)
@@ -269,7 +280,7 @@ The export feature is implemented across these files:
 
 3. **Export**: `AVAssetWriter` encodes mixed PCM to AAC in temp M4A file
 
-4. **Integration**: Main export reads temp M4A and writes samples to final MOV
+4. **Integration**: Main export reads temp M4A and writes samples interleaved with video frames
 
 ### Ken Burns Motion Timing
 
@@ -292,35 +303,29 @@ For the last slide (no outgoing transition), `outgoingTransition = 0`, which is 
 
 ## Known Issues & Limitations
 
-### Photos Library Video Audio (UNRESOLVED)
+### Audio Export (DISABLED - January 2026)
 
-**Symptom**: Export freezes when attempting to extract audio from Photos Library videos.
+**Status**: Audio encoding is temporarily disabled.
 
-**Error Messages**:
-```
-Unable to obtain a task name port right for pid 431: (os/kern) failure (0x5)
-AddInstanceForFactory: No factory registered for id <CFUUID> F8BB1C28-BAE8-11D6-9C31-00039315CD46
-AudioQueueObject.cpp:3530  _Start: Error (-4) getting reporterIDs
-```
+**Root Cause**: The sequential audio/video writing pattern causes AVAssetWriter to hang indefinitely. The original implementation wrote all video frames first, then attempted to write audio samples after marking video input as finished. This fails because:
 
-**Root Cause Analysis**:
-- The AudioQueue errors occur when certain AVFoundation operations trigger audio hardware initialization
-- This appears to be a sandbox or entitlement issue on macOS
-- The error occurs even when using `PHAssetResourceManager.writeData()` to export videos to temp files
-- The video file itself is valid and can be read for video frames, but audio operations trigger the error
+1. AVAssetWriter expects **interleaved writes** with overlapping time ranges
+2. After `videoInput.markAsFinished()`, the writer's timeline state changes
+3. `audioInput.isReadyForMoreMediaData` never becomes true
+4. The infinite polling loop (`while !isReadyForMoreMediaData`) has no escape condition
 
-**Attempted Fixes**:
-1. ✗ Using `PHAssetResourceManager` instead of `PHImageManager.requestAVAsset()` - still triggers error
-2. ✗ Using `AVAssetWriter` instead of `AVAssetExportSession` for audio - still triggers error
-3. ✗ Various audio reader settings (PCM conversion, etc.) - still triggers error
+The hang occurs at exactly frame 36 (1.2 seconds at 30fps), which is when the audio writing loop starts executing.
 
-**Current Workaround**: None fully working. The code attempts to use `PHAssetResourceManager` but audio extraction from Photos Library videos still fails.
+**Note**: This issue has NOTHING to do with Photos Library videos. It affects any export with sound/music enabled, even with only filesystem photos.
 
-**Potential Future Solutions**:
-1. Request additional entitlements (`com.apple.security.audio.capture`?)
-2. Pre-export all Photos Library videos to temp files before audio processing begins
-3. Use a different audio extraction API
-4. Skip audio for Photos Library videos (graceful degradation)
+**Workaround**: Audio encoding has been removed from `ExportCoordinator`. Exported videos are silent.
+
+**Future Fix**: Implement proper interleaved audio/video writing:
+1. Pre-compose audio to temp file (AudioComposer already works)
+2. Create a combined timeline with both video frames and audio samples sorted by presentation time
+3. Write samples to appropriate input in timestamp order
+4. Both inputs receive data concurrently (overlapping time ranges)
+5. Mark both as finished, then `finishWriting()`
 
 ### Video Playback Timing
 
@@ -340,14 +345,15 @@ Large slideshows with many high-resolution photos may consume significant memory
 
 ## Testing Checklist
 
-- [ ] Export with filesystem photos only (should work)
-- [ ] Export with Photos Library photos only (should work)
-- [ ] Export with filesystem videos (should work including audio)
-- [ ] Export with Photos Library videos (video frames work, audio fails)
-- [ ] Export with background music (should work)
+- [x] Export with filesystem photos only (works, silent)
+- [x] Export with Photos Library photos only (works, silent)
+- [x] Export with filesystem videos (works, video plays, silent)
+- [x] Export with Photos Library videos (works, video plays, silent)
 - [ ] Export with various transition styles (plain, crossfade, zoom)
 - [ ] Export with patina effects (35mm, aged film, VHS)
 - [ ] Export with color effects (monochrome, silvertone, sepia)
-- [ ] Cancel during export
+- [x] Cancel during export (works - stops immediately)
 - [ ] Export very long slideshow (memory stability)
+
+**Verified January 2026**: Export completes without hanging. No audio in output (as expected with audio disabled).
 
