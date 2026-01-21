@@ -69,7 +69,8 @@ enum ExportPreset: String, CaseIterable, Identifiable {
     }
 
     /// Audio settings for AVAssetWriter (AAC stereo)
-    static var audioSettings: [String: Any] {
+    /// Note: nonisolated to allow access from non-MainActor contexts
+    nonisolated static var audioSettings: [String: Any] {
         return [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 44100,

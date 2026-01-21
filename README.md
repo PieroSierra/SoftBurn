@@ -12,17 +12,19 @@ There are surprisingly few free, beautiful, and simple media slideshow apps for 
 
 It can also export slideshows as full HD videos.
 
-![VideoExport.png](VideoExport.png)
-
 ## Features
 
-- **Effortlessly Beautiful** - Intelligent face detection + Ken Burns effects make every slideshow dynamic without manual tweaking
+- **Effortlessly Beautiful Slideshows** - Intelligent face detection + Ken Burns effects make every slideshow dynamic without manual tweaking
 - **Film Simulation** - GPU-accelerated analog effects (35mm film grain, aged patina, VHS artifacts) for authentic vintage aesthetics
+- **Music support** - add your favorite music to your slideshows, or select one of the build-in choices
 - **Metal-Accelerated** - Two-pass rendering pipeline for real-time effects without compromising performance
 - **LiquidGlass Design** - Modern macOS styling that embraces system design language (Tahoe+)
 - **Smart Caching** - Prefetched face detection and lazy thumbnail generation keep the UI responsive
 - **Versatile Media** - Photos, videos, and custom music support
 - **Persistent Projects** - Save slideshows as `.softburn` files with all settings and metadata
+- **Export as Video** - export your slideshows as full HD videos, with all settings preserved. 
+
+![VideoExport.png](VideoExport.png)
 
 ## Technical Highlights
 

@@ -17,22 +17,15 @@ import Foundation
 import AVFoundation
 
 /// Composes audio for video export
-class AudioComposer {
+/// Note: Sendable and nonisolated for use from ExportCoordinator actor
+final class AudioComposer: Sendable {
     private let photos: [MediaItem]
     private let exportSettings: ExportSettings
     private let timeline: [SlideEntry]
     private let totalDuration: Double
     private let videoURLs: [UUID: URL]
 
-    // Track which composition tracks are music vs video audio
-    private var musicTrack: AVMutableCompositionTrack?
-    private var videoAudioTracks: [AVMutableCompositionTrack] = []
-
-    // Fade durations for music
-    private static let fadeInDuration: Double = 1.5
-    private static let fadeOutDuration: Double = 0.75
-
-    init(photos: [MediaItem], exportSettings: ExportSettings, timeline: [SlideEntry], totalDuration: Double, videoURLs: [UUID: URL]) {
+    nonisolated init(photos: [MediaItem], exportSettings: ExportSettings, timeline: [SlideEntry], totalDuration: Double, videoURLs: [UUID: URL]) {
         self.photos = photos
         self.exportSettings = exportSettings
         self.timeline = timeline
@@ -41,11 +34,7 @@ class AudioComposer {
     }
 
     /// Compose all audio and return URL to temporary file (nil if no audio)
-    func composeAudio() async throws -> URL? {
-        // Reset track references
-        musicTrack = nil
-        videoAudioTracks = []
-
+    nonisolated func composeAudio() async throws -> URL? {
         // First, check if we have any audio to compose
         let musicURL = getMusicURL()
         let hasMusic = musicURL != nil
@@ -65,14 +54,17 @@ class AudioComposer {
             return nil
         }
 
-        // Create composition
+        // Create composition and track references
         let composition = AVMutableComposition()
+        var musicTrack: AVMutableCompositionTrack?
+        var videoAudioTracks: [AVMutableCompositionTrack] = []
         var addedAudio = false
 
         // Add background music if selected
         if let url = musicURL {
             do {
-                let added = try await addBackgroundMusic(to: composition, from: url)
+                let (track, added) = try await addBackgroundMusic(to: composition, from: url)
+                musicTrack = track
                 addedAudio = addedAudio || added
             } catch {
                 print("[AudioComposer] Warning: Failed to add background music: \(error)")
@@ -82,7 +74,8 @@ class AudioComposer {
         // Add video audio tracks if enabled
         if exportSettings.playVideosWithSound {
             do {
-                let added = try await addVideoAudio(to: composition)
+                let (tracks, added) = try await addVideoAudio(to: composition)
+                videoAudioTracks = tracks
                 addedAudio = addedAudio || added
             } catch {
                 print("[AudioComposer] Warning: Failed to add video audio: \(error)")
@@ -94,12 +87,16 @@ class AudioComposer {
         }
 
         // Export using AVAssetWriter (more reliable than AVAssetExportSession)
-        return try await exportCompositionWithWriter(composition)
+        return try await exportCompositionWithWriter(
+            composition,
+            musicTrack: musicTrack,
+            videoAudioTracks: videoAudioTracks
+        )
     }
 
     // MARK: - Background Music
 
-    private func getMusicURL() -> URL? {
+    private nonisolated func getMusicURL() -> URL? {
         guard let selection = exportSettings.musicSelection else {
             return nil
         }
@@ -116,7 +113,7 @@ class AudioComposer {
         }
     }
 
-    private func builtinMusicURL(for id: MusicPlaybackManager.MusicSelection.BuiltinID) -> URL? {
+    private nonisolated func builtinMusicURL(for id: MusicPlaybackManager.MusicSelection.BuiltinID) -> URL? {
         let filename: String
         switch id {
         case .winters_tale:
@@ -136,12 +133,13 @@ class AudioComposer {
         return Bundle.main.url(forResource: filename, withExtension: "mp3")
     }
 
-    private func addBackgroundMusic(to composition: AVMutableComposition, from musicURL: URL) async throws -> Bool {
+    /// Returns (track, success) tuple
+    private nonisolated func addBackgroundMusic(to composition: AVMutableComposition, from musicURL: URL) async throws -> (AVMutableCompositionTrack?, Bool) {
         let musicAsset = AVURLAsset(url: musicURL)
 
         guard let sourceTrack = try? await musicAsset.loadTracks(withMediaType: .audio).first else {
             print("[AudioComposer] No audio track found in music file")
-            return false
+            return (nil, false)
         }
 
         let musicDuration = try await musicAsset.load(.duration)
@@ -149,7 +147,7 @@ class AudioComposer {
 
         guard musicDurationSeconds > 0 else {
             print("[AudioComposer] Music duration is zero")
-            return false
+            return (nil, false)
         }
 
         // Create audio track in composition
@@ -158,11 +156,8 @@ class AudioComposer {
             preferredTrackID: kCMPersistentTrackID_Invalid
         ) else {
             print("[AudioComposer] Failed to create composition track for music")
-            return false
+            return (nil, false)
         }
-
-        // Store reference for volume control
-        musicTrack = compositionTrack
 
         // Loop music to fill total duration
         var currentTime: CMTime = .zero
@@ -189,12 +184,14 @@ class AudioComposer {
         }
 
         print("[AudioComposer] Added background music with volume \(exportSettings.musicVolume)%")
-        return true
+        return (compositionTrack, true)
     }
 
     // MARK: - Video Audio
 
-    private func addVideoAudio(to composition: AVMutableComposition) async throws -> Bool {
+    /// Returns (tracks, success) tuple
+    private nonisolated func addVideoAudio(to composition: AVMutableComposition) async throws -> ([AVMutableCompositionTrack], Bool) {
+        var tracks: [AVMutableCompositionTrack] = []
         var addedAny = false
 
         for entry in timeline {
@@ -224,7 +221,7 @@ class AudioComposer {
             }
 
             // Store reference for volume control (video audio at 100%)
-            videoAudioTracks.append(compositionTrack)
+            tracks.append(compositionTrack)
 
             // Calculate video audio duration
             let videoDuration = try await videoAsset.load(.duration)
@@ -254,12 +251,16 @@ class AudioComposer {
             }
         }
 
-        return addedAny
+        return (tracks, addedAny)
     }
 
     // MARK: - Export with AVAssetWriter (more reliable than AVAssetExportSession)
 
-    private func exportCompositionWithWriter(_ composition: AVMutableComposition) async throws -> URL {
+    private nonisolated func exportCompositionWithWriter(
+        _ composition: AVMutableComposition,
+        musicTrack: AVMutableCompositionTrack?,
+        videoAudioTracks: [AVMutableCompositionTrack]
+    ) async throws -> URL {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("m4a")
@@ -296,7 +297,11 @@ class AudioComposer {
         }
 
         // Create audio mix for volume/fades
-        let audioMix = createAudioMix(for: composition)
+        let audioMix = createAudioMix(
+            for: composition,
+            musicTrack: musicTrack,
+            videoAudioTracks: videoAudioTracks
+        )
 
         // Use AVAssetReaderAudioMixOutput to mix all tracks with volume control
         let readerSettings: [String: Any] = [
@@ -354,7 +359,11 @@ class AudioComposer {
     /// Creates audio mix with volume settings:
     /// - Music track: Uses musicVolume setting with fade in/out
     /// - Video audio tracks: 100% volume (no fades)
-    private func createAudioMix(for composition: AVMutableComposition) -> AVMutableAudioMix {
+    private nonisolated func createAudioMix(
+        for composition: AVMutableComposition,
+        musicTrack: AVMutableCompositionTrack?,
+        videoAudioTracks: [AVMutableCompositionTrack]
+    ) -> AVMutableAudioMix {
         let audioMix = AVMutableAudioMix()
         var inputParameters: [AVMutableAudioMixInputParameters] = []
 
@@ -365,12 +374,16 @@ class AudioComposer {
             // Convert musicVolume (0-100) to float (0.0-1.0)
             let volume = Float(exportSettings.musicVolume) / 100.0
 
+            // Fade durations (constants)
+            let fadeInDuration: Double = 1.5
+            let fadeOutDuration: Double = 0.75
+
             // Fade in at start
-            let fadeInEnd = CMTime(seconds: Self.fadeInDuration, preferredTimescale: 600)
+            let fadeInEnd = CMTime(seconds: fadeInDuration, preferredTimescale: 600)
             params.setVolumeRamp(fromStartVolume: 0, toEndVolume: volume, timeRange: CMTimeRange(start: .zero, duration: fadeInEnd))
 
             // Hold volume after fade in
-            let holdEnd = CMTime(seconds: totalDuration - Self.fadeOutDuration, preferredTimescale: 600)
+            let holdEnd = CMTime(seconds: totalDuration - fadeOutDuration, preferredTimescale: 600)
             if CMTimeCompare(fadeInEnd, holdEnd) < 0 {
                 params.setVolume(volume, at: fadeInEnd)
             }
@@ -378,12 +391,12 @@ class AudioComposer {
             // Fade out at end
             let fadeOutStart = holdEnd
             let fadeOutEnd = CMTime(seconds: totalDuration, preferredTimescale: 600)
-            let fadeOutDuration = CMTimeSubtract(fadeOutEnd, fadeOutStart)
-            if CMTimeCompare(fadeOutDuration, .zero) > 0 {
+            let fadeOutRange = CMTimeSubtract(fadeOutEnd, fadeOutStart)
+            if CMTimeCompare(fadeOutRange, .zero) > 0 {
                 params.setVolumeRamp(
                     fromStartVolume: volume,
                     toEndVolume: 0,
-                    timeRange: CMTimeRange(start: fadeOutStart, duration: fadeOutDuration)
+                    timeRange: CMTimeRange(start: fadeOutStart, duration: fadeOutRange)
                 )
             }
 

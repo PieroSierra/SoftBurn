@@ -46,25 +46,27 @@ class MusicPlaybackManager: ObservableObject {
             }
         }
         
-        static func from(identifier: String?) -> MusicSelection {
+        /// Parse identifier string to MusicSelection
+        /// Note: nonisolated as this is a pure function with no actor-isolated state
+        nonisolated static func from(identifier: String?) -> MusicSelection {
             guard let identifier = identifier else { return .none }
-            
+
             // Check if it's a built-in track first (before checking for URLs)
             if let builtinID = BuiltinID(rawValue: identifier) {
                 return .builtin(builtinID)
             }
-            
+
             // Check if it's a file URL (custom music)
             // Try parsing as URL string (for absolute URLs like "file:///path")
             if let url = URL(string: identifier), url.isFileURL {
                 return .custom(url)
             }
-            
+
             // Fallback: try as file path (for paths starting with /)
             if identifier.hasPrefix("/") {
                 return .custom(URL(fileURLWithPath: identifier))
             }
-            
+
             return .none
         }
     }

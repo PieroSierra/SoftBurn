@@ -325,8 +325,7 @@ actor ExportCoordinator {
             try compositionAudioTrack.insertTimeRange(audioTimeRange, of: audioTrack, at: .zero)
         }
 
-        // Export the composition
-        // Use passthrough for video (already H.264), will re-encode audio if needed
+        // Export the composition using modern async API
         guard let exportSession = AVAssetExportSession(
             asset: composition,
             presetName: AVAssetExportPresetHighestQuality
@@ -334,20 +333,11 @@ actor ExportCoordinator {
             throw ExportError.videoWriterFailed("Failed to create export session")
         }
 
-        exportSession.outputURL = outputURL
-        exportSession.outputFileType = .mov
-
-        await exportSession.export()
-
-        switch exportSession.status {
-        case .completed:
+        do {
+            try await exportSession.export(to: outputURL, as: .mov)
             print("[ExportCoordinator] Muxing complete")
-        case .failed:
-            throw ExportError.videoWriterFailed("Export session failed: \(exportSession.error?.localizedDescription ?? "unknown")")
-        case .cancelled:
-            throw ExportError.cancelled
-        default:
-            throw ExportError.videoWriterFailed("Export session ended with unexpected status: \(exportSession.status.rawValue)")
+        } catch {
+            throw ExportError.videoWriterFailed("Export session failed: \(error.localizedDescription)")
         }
     }
 
@@ -450,7 +440,7 @@ actor ExportCoordinator {
             nextTexture = nil
         }
 
-        // Calculate transforms
+        // Calculate transforms (nonisolated)
         let currentTransform = calculateTransform(
             for: current,
             animationProgress: animationProgress,
@@ -472,7 +462,10 @@ actor ExportCoordinator {
         // Calculate transition start
         let transitionStart = current.holdDuration / current.totalDuration
 
-        // Render
+        // Render on MainActor
+        // Note: CVPixelBuffer Sendable warning is expected - @preconcurrency import handles this
+        // at runtime, but the compiler still warns. This is safe as pixel buffers are
+        // reference-counted and thread-safe for read operations.
         return try await MainActor.run {
             try renderer.renderFrame(
                 currentTexture: currentTexture,

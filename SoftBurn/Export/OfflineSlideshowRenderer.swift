@@ -681,7 +681,7 @@ struct MediaTransform: Sendable {
     let faceBoxes: [CGRect]
     let isVideo: Bool
 
-    init(
+    nonisolated init(
         rotationDegrees: Int = 0,
         scale: Double = 1.0,
         offset: CGSize = .zero,
