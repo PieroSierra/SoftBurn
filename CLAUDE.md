@@ -244,3 +244,10 @@ Current state: Stable, production-ready with unified Metal rendering pipeline.
 - macOS 26+ (Tahoe): LiquidGlass styling
 - Older versions: Graceful fallback UI
 - All features work across supported versions (no breaking dependencies on latest APIs)
+
+## Active Technologies
+- Swift 5.9+ with strict concurrency (Swift 6 compatible) + SwiftUI, AppKit, Foundation (all built-in macOS frameworks) (001-open-recent)
+- UserDefaults via @AppStorage with JSON-encoded array (001-open-recent)
+
+## Recent Changes
+- 001-open-recent: Added Swift 5.9+ with strict concurrency (Swift 6 compatible) + SwiftUI, AppKit, Foundation (all built-in macOS frameworks)

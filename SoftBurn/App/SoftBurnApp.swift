@@ -16,12 +16,15 @@ extension Notification.Name {
     static let exportAsVideo480p = Notification.Name("SoftBurn.exportAsVideo480p")
     static let addFromPhotosLibrary = Notification.Name("SoftBurn.addFromPhotosLibrary")
     static let addFromFiles = Notification.Name("SoftBurn.addFromFiles")
+    static let openRecentSlideshow = Notification.Name("SoftBurn.openRecentSlideshow")
+    static let clearRecentList = Notification.Name("SoftBurn.clearRecentList")
 }
 
 @main
 struct SoftBurnApp: App {
     @NSApplicationDelegateAdaptor(SoftBurnAppDelegate.self) private var appDelegate
     @StateObject private var session = AppSessionState.shared
+    @ObservedObject private var recentsManager = RecentSlideshowsManager.shared
 
     var body: some Scene {
         WindowGroup {
@@ -47,6 +50,29 @@ struct SoftBurnApp: App {
                     Label("Open Slideshow...", systemImage: "folder")
                 }
                 .keyboardShortcut("o", modifiers: .command)
+
+                // Open Recent submenu
+                Menu {
+                    ForEach(recentsManager.recentSlideshows) { recent in
+                        Button(action: {
+                            NotificationCenter.default.post(name: .openRecentSlideshow, object: recent.url)
+                        }) {
+                            Text(recent.filename)
+                        }
+                        .disabled(!recent.fileExists)
+                    }
+
+                    if !recentsManager.isEmpty {
+                        Divider()
+                    }
+
+                    Button("Clear List") {
+                        NotificationCenter.default.post(name: .clearRecentList, object: nil)
+                    }
+                    .disabled(recentsManager.isEmpty)
+                } label: {
+                    Label("Open Recent", systemImage: "clock")
+                }
 
                 Button(action: {
                     NotificationCenter.default.post(name: .saveSlideshow, object: nil)

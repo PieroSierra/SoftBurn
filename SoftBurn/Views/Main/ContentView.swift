@@ -29,6 +29,7 @@ enum FileImportMode {
 struct ContentView: View {
     @StateObject private var slideshowState = SlideshowState()
     @ObservedObject private var settings = SlideshowSettings.shared
+    @ObservedObject private var recentsManager = RecentSlideshowsManager.shared
     @EnvironmentObject private var session: AppSessionState
     @State private var isImporting = false
     @State private var importMode: FileImportMode = .photos
@@ -46,6 +47,8 @@ struct ContentView: View {
     @State private var isExporting = false
     @State private var exportPreset: ExportPreset = .hd720p
     @State private var exportProgress = ExportProgress()
+    @State private var showMissingFileAlert = false
+    @State private var missingFilename: String = ""
 
     /// Height of our custom toolbar (used for content inset on older macOS).
     private let customToolbarHeight: CGFloat = 44
@@ -79,6 +82,13 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .addFromFiles)) { _ in
                 importMode = .photos
                 isImporting = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openRecentSlideshow)) { notification in
+                guard let url = notification.object as? URL else { return }
+                openRecentSlideshow(url: url)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .clearRecentList)) { _ in
+                recentsManager.clearAll()
             }
     }
 
@@ -155,14 +165,33 @@ struct ContentView: View {
                         }) {
                             Label("Open Slideshow...", systemImage: "folder")
                         }
-                        
+
+                        // Open Recent submenu
+                        Menu {
+                            ForEach(recentsManager.recentSlideshows) { recent in
+                                Button(recent.filename) {
+                                    openRecentSlideshow(url: recent.url)
+                                }
+                                .disabled(!recent.fileExists)
+                            }
+                            if !recentsManager.isEmpty {
+                                Divider()
+                            }
+                            Button("Clear List") {
+                                recentsManager.clearAll()
+                            }
+                            .disabled(recentsManager.isEmpty)
+                        } label: {
+                            Label("Open Recent", systemImage: "clock")
+                        }
+
                         Button(action: {
                             beginSave()
                         }) {
                             Label("Save Slideshow...", systemImage: "square.and.arrow.down")
                         }
                         .disabled(slideshowState.isEmpty)
-                        
+
                         Divider()
                         
                         Menu {
@@ -344,6 +373,12 @@ struct ContentView: View {
             }
         } message: {
             Text("Do you want to save the changes you made to your slideshow?")
+        }
+        // Missing file alert for recent slideshows
+        .alert("File Not Found", isPresented: $showMissingFileAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The slideshow \"\(missingFilename)\" could not be found. It may have been moved or deleted.")
         }
         // CMD+A to select all
         .background(
@@ -592,6 +627,25 @@ struct ContentView: View {
                         Label("Open Slideshow...", systemImage: "folder")
                     }
 
+                    // Open Recent submenu
+                    Menu {
+                        ForEach(recentsManager.recentSlideshows) { recent in
+                            Button(recent.filename) {
+                                openRecentSlideshow(url: recent.url)
+                            }
+                            .disabled(!recent.fileExists)
+                        }
+                        if !recentsManager.isEmpty {
+                            Divider()
+                        }
+                        Button("Clear List") {
+                            recentsManager.clearAll()
+                        }
+                        .disabled(recentsManager.isEmpty)
+                    } label: {
+                        Label("Open Recent", systemImage: "clock")
+                    }
+
                     Button(action: {
                         beginSave()
                     }) {
@@ -791,7 +845,25 @@ struct ContentView: View {
     }
     
     // MARK: - Save/Open
-    
+
+    /// Opens a recent slideshow from the recents menu
+    private func openRecentSlideshow(url: URL) {
+        // Check if file exists
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            missingFilename = url.deletingPathExtension().lastPathComponent
+            showMissingFileAlert = true
+            return
+        }
+
+        // If we have existing photos, show warning dialog
+        if !slideshowState.isEmpty {
+            pendingOpenURL = url
+            showOpenWarning = true
+        } else {
+            loadSlideshow(from: url)
+        }
+    }
+
     private func handleOpenSlideshow(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
@@ -835,6 +907,9 @@ struct ContentView: View {
             
             // Opening a document sets a clean baseline.
             session.markClean()
+
+            // Add to recents after successful load
+            recentsManager.addOrUpdate(url: url)
 
             // Face detection prefetch (open-time only; never during playback)
             Task.detached(priority: .utility) {

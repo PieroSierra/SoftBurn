@@ -21,7 +21,11 @@
       "Bash(/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild:*)",
       "WebFetch(domain:stackoverflow.com)",
       "Bash(git check-ignore:*)",
-      "Bash(md5:*)"
+      "Bash(md5:*)",
+      "Bash(.specify/scripts/bash/setup-plan.sh:*)",
+      "Bash(tree:*)",
+      "Bash(.specify/scripts/bash/update-agent-context.sh:*)",
+      "Bash(.specify/scripts/bash/check-prerequisites.sh:*)"
     ]
   }
 }
