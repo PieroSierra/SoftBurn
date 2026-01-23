@@ -17,39 +17,64 @@ import Photos
 actor ThumbnailCache {
     static let shared = ThumbnailCache()
 
+    /// Size bucket for cache keying - limits cache explosion by grouping sizes
+    enum SizeBucket: Hashable {
+        case standard    // Up to 350pt (covers 100-420pt zoom levels)
+        case large       // Up to 700pt (covers 680pt zoom level + Retina)
+
+        var targetSize: CGFloat {
+            switch self {
+            case .standard: return 350
+            case .large: return 700
+            }
+        }
+
+        static func from(requestedSize: CGFloat?) -> SizeBucket {
+            guard let size = requestedSize, size > 350 else { return .standard }
+            return .large
+        }
+    }
+
     private struct Key: Hashable {
         enum Source: Hashable {
             case filesystem(url: URL, rotation: Int)
             case photosLibrary(localIdentifier: String, rotation: Int)
         }
         let source: Source
+        let sizeBucket: SizeBucket
 
-        init(url: URL, rotationDegrees: Int) {
+        init(url: URL, rotationDegrees: Int, sizeBucket: SizeBucket = .standard) {
             self.source = .filesystem(url: url, rotation: rotationDegrees)
+            self.sizeBucket = sizeBucket
         }
 
-        init(photosLibraryLocalIdentifier: String, rotationDegrees: Int) {
+        init(photosLibraryLocalIdentifier: String, rotationDegrees: Int, sizeBucket: SizeBucket = .standard) {
             self.source = .photosLibrary(localIdentifier: photosLibraryLocalIdentifier, rotation: rotationDegrees)
+            self.sizeBucket = sizeBucket
         }
 
-        init(from item: MediaItem) {
+        init(from item: MediaItem, sizeBucket: SizeBucket = .standard) {
             switch item.source {
             case .filesystem(let url):
                 self.source = .filesystem(url: url, rotation: item.rotationDegrees)
             case .photosLibrary(let localID, _):
                 self.source = .photosLibrary(localIdentifier: localID, rotation: item.rotationDegrees)
             }
+            self.sizeBucket = sizeBucket
         }
     }
 
     private var cache: [Key: NSImage] = [:]
-    private let thumbnailSize: CGFloat = 350 // Target size for longest edge
 
     private init() {}
 
     /// Generate or retrieve a thumbnail for a MediaItem
-    func thumbnail(for item: MediaItem) async -> NSImage? {
-        let key = Key(from: item)
+    /// - Parameters:
+    ///   - item: The media item to generate a thumbnail for
+    ///   - requestedSize: Optional requested size for the thumbnail (determines cache bucket)
+    func thumbnail(for item: MediaItem, requestedSize: CGFloat? = nil) async -> NSImage? {
+        let bucket = SizeBucket.from(requestedSize: requestedSize)
+        let key = Key(from: item, sizeBucket: bucket)
 
         // Check cache first
         if let cached = cache[key] {
@@ -59,11 +84,12 @@ actor ThumbnailCache {
 
         // Generate thumbnail based on source
         let image: NSImage?
+        let targetSize = bucket.targetSize
         switch item.source {
         case .filesystem(let url):
-            image = await generateThumbnail(for: url, rotationDegrees: item.rotationDegrees)
+            image = await generateThumbnail(for: url, rotationDegrees: item.rotationDegrees, targetSize: targetSize)
         case .photosLibrary(let localID, _):
-            image = await generateThumbnailFromPhotosLibrary(localIdentifier: localID, rotationDegrees: item.rotationDegrees)
+            image = await generateThumbnailFromPhotosLibrary(localIdentifier: localID, rotationDegrees: item.rotationDegrees, targetSize: targetSize)
         }
 
         if let generatedImage = image {
@@ -74,16 +100,22 @@ actor ThumbnailCache {
     }
 
     /// Generate or retrieve a thumbnail for a photo URL (legacy method)
-    func thumbnail(for url: URL, rotationDegrees: Int = 0) async -> NSImage? {
+    /// - Parameters:
+    ///   - url: The file URL to generate a thumbnail for
+    ///   - rotationDegrees: Rotation to apply (0, 90, 180, 270)
+    ///   - requestedSize: Optional requested size for the thumbnail (determines cache bucket)
+    func thumbnail(for url: URL, rotationDegrees: Int = 0, requestedSize: CGFloat? = nil) async -> NSImage? {
         let rotation = MediaItem.normalizedRotationDegrees(rotationDegrees)
-        let key = Key(url: url, rotationDegrees: rotation)
+        let bucket = SizeBucket.from(requestedSize: requestedSize)
+        let key = Key(url: url, rotationDegrees: rotation, sizeBucket: bucket)
         // Check cache first
         if let cached = cache[key] {
             return cached
         }
 
         // Generate thumbnail
-        guard let image = await generateThumbnail(for: url, rotationDegrees: rotation) else {
+        let targetSize = bucket.targetSize
+        guard let image = await generateThumbnail(for: url, rotationDegrees: rotation, targetSize: targetSize) else {
             return nil
         }
 
@@ -93,10 +125,10 @@ actor ThumbnailCache {
     }
 
     /// Generate a thumbnail from Photos Library
-    private func generateThumbnailFromPhotosLibrary(localIdentifier: String, rotationDegrees: Int) async -> NSImage? {
+    private func generateThumbnailFromPhotosLibrary(localIdentifier: String, rotationDegrees: Int, targetSize: CGFloat = 350) async -> NSImage? {
         // Photos Library handles EXIF orientation automatically
-        let targetSize = CGSize(width: thumbnailSize, height: thumbnailSize)
-        guard let image = await PhotosLibraryImageLoader.shared.loadNSImage(localIdentifier: localIdentifier, targetSize: targetSize) else {
+        let cgTargetSize = CGSize(width: targetSize, height: targetSize)
+        guard let image = await PhotosLibraryImageLoader.shared.loadNSImage(localIdentifier: localIdentifier, targetSize: cgTargetSize) else {
             return nil
         }
 
@@ -109,7 +141,8 @@ actor ThumbnailCache {
     }
     
     /// Generate a thumbnail from a photo URL
-    private func generateThumbnail(for url: URL, rotationDegrees: Int) async -> NSImage? {
+    private func generateThumbnail(for url: URL, rotationDegrees: Int, targetSize: CGFloat = 350) async -> NSImage? {
+        let thumbnailSize = targetSize
         return await Task.detached {
             // Resolve the URL to ensure it's accessible
             let resolvedURL: URL
@@ -144,7 +177,7 @@ actor ThumbnailCache {
 
                 let generatorBox = GeneratorBox(AVAssetImageGenerator(asset: asset))
                 generatorBox.generator.appliesPreferredTrackTransform = true
-                generatorBox.generator.maximumSize = CGSize(width: self.thumbnailSize, height: self.thumbnailSize)
+                generatorBox.generator.maximumSize = CGSize(width: thumbnailSize, height: thumbnailSize)
                 let cg: CGImage? = await withCheckedContinuation { continuation in
                     let times = [NSValue(time: .zero)]
                     generatorBox.generator.generateCGImagesAsynchronously(forTimes: times) { _, image, _, result, _ in
@@ -174,7 +207,7 @@ actor ThumbnailCache {
                 0,
                 [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceThumbnailMaxPixelSize: self.thumbnailSize,
+                    kCGImageSourceThumbnailMaxPixelSize: thumbnailSize,
                     kCGImageSourceCreateThumbnailWithTransform: true,
                     kCGImageSourceShouldCacheImmediately: true
                 ] as CFDictionary
@@ -190,7 +223,7 @@ actor ThumbnailCache {
             // Last-resort fallback: NSImage (may trigger HDR logs on some assets).
             if let fullImage = NSImage(contentsOf: resolvedURL) {
                 // This path does not guarantee EXIF-orientation correctness, but is best-effort.
-                let scaled = Self.scaleImage(fullImage, toMaxSize: self.thumbnailSize)
+                let scaled = Self.scaleImage(fullImage, toMaxSize: thumbnailSize)
                 if rotationDegrees == 0 { return scaled }
                 guard let cg = scaled.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return scaled }
                 if let rotated = Self.rotateCGImage(cg, degrees: rotationDegrees) {

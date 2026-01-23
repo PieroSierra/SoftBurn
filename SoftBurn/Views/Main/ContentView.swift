@@ -28,6 +28,7 @@ enum FileImportMode {
 
 struct ContentView: View {
     @StateObject private var slideshowState = SlideshowState()
+    @StateObject private var gridZoomState = GridZoomState.shared
     @ObservedObject private var settings = SlideshowSettings.shared
     @ObservedObject private var recentsManager = RecentSlideshowsManager.shared
     @EnvironmentObject private var session: AppSessionState
@@ -265,6 +266,34 @@ struct ContentView: View {
                 }
 
                 // Trailing controls - disabled when viewer is open
+                ToolbarItemGroup(placement: .automatic) {
+                    // Zoom controls
+                    ControlGroup {
+                        Button(action: {
+                            gridZoomState.zoomOut()
+                        }) {
+                            Image(systemName: "minus")
+                        }
+                        .help("Zoom out")
+                        .disabled(!gridZoomState.canZoomOut || slideshowState.isEmpty || isShowingViewer)
+                        
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.4))
+                            .frame(width: 1, height: 16)
+                    
+                        Button(action: {
+                            gridZoomState.zoomIn()
+                        }) {
+                            Image(systemName: "plus")
+                        }
+                        .help("Zoom in")
+                        .disabled(!gridZoomState.canZoomIn || slideshowState.isEmpty || isShowingViewer)
+                    }
+                }
+                
+                // Break inglass toolbar
+                ToolbarSpacer(.fixed)
+                
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button(action: {
                         if let photoID = slideshowState.singleSelectedPhotoID {
@@ -579,6 +608,10 @@ struct ContentView: View {
                 photos: slideshowState.photos,
                 selectedPhotoIDs: $slideshowState.selectedPhotoIDs,
                 toolbarInset: toolbarInset,
+                zoomPointSize: gridZoomState.currentPointSize,
+                onZoomLevelChange: { newLevelIndex in
+                    gridZoomState.currentLevelIndex = newLevelIndex
+                },
                 onUserClickItem: { photoID in
                     if let idx = slideshowState.photos.firstIndex(where: { $0.id == photoID }) {
                         lastSelectedIndex = idx
@@ -728,9 +761,28 @@ struct ContentView: View {
             }
             
             Spacer()
-            
+
             // Right side buttons - disabled when viewer is open
             HStack(spacing: 12) {
+                // Zoom controls
+                Button(action: {
+                    gridZoomState.zoomOut()
+                }) {
+                    Image(systemName: "minus")
+                        .frame(width: 20, height: 20)
+                }
+                .help("Zoom out")
+                .disabled(!gridZoomState.canZoomOut || slideshowState.isEmpty || isShowingViewer)
+
+                Button(action: {
+                    gridZoomState.zoomIn()
+                }) {
+                    Image(systemName: "plus")
+                        .frame(width: 20, height: 20)
+                }
+                .help("Zoom in")
+                .disabled(!gridZoomState.canZoomIn || slideshowState.isEmpty || isShowingViewer)
+
                 Button(action: {
                     if let photoID = slideshowState.singleSelectedPhotoID {
                         slideshowState.rotatePhotoCounterclockwise(withID: photoID)

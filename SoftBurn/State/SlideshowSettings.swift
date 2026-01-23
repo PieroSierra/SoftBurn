@@ -178,6 +178,75 @@ class SlideshowSettings: ObservableObject {
 
 // MARK: - Color Extensions
 
+// MARK: - Grid Zoom State
+
+/// Manages grid thumbnail zoom level with persistence
+@MainActor
+final class GridZoomState: ObservableObject {
+    static let shared = GridZoomState()
+
+    @AppStorage("gridZoomLevelIndex") private var storedLevelIndex: Int = ZoomLevel.defaultIndex
+
+    @Published var currentLevelIndex: Int = ZoomLevel.defaultIndex {
+        didSet {
+            // Clamp to valid range
+            let clamped = max(0, min(currentLevelIndex, ZoomLevel.all.count - 1))
+            if clamped != currentLevelIndex {
+                currentLevelIndex = clamped
+            }
+            storedLevelIndex = currentLevelIndex
+        }
+    }
+
+    /// Current zoom level
+    var currentLevel: ZoomLevel {
+        ZoomLevel.all[currentLevelIndex]
+    }
+
+    /// Current thumbnail size in points
+    var currentPointSize: CGFloat {
+        currentLevel.pointSize
+    }
+
+    /// Whether zoom in is available (not at maximum)
+    var canZoomIn: Bool {
+        currentLevelIndex < ZoomLevel.all.count - 1
+    }
+
+    /// Whether zoom out is available (not at minimum)
+    var canZoomOut: Bool {
+        currentLevelIndex > 0
+    }
+
+    private init() {
+        // Load from storage, clamped to valid range
+        let stored = storedLevelIndex
+        currentLevelIndex = max(0, min(stored, ZoomLevel.all.count - 1))
+    }
+
+    /// Increase zoom by one level
+    func zoomIn() {
+        if canZoomIn {
+            currentLevelIndex += 1
+        }
+    }
+
+    /// Decrease zoom by one level
+    func zoomOut() {
+        if canZoomOut {
+            currentLevelIndex -= 1
+        }
+    }
+
+    /// Snap to the nearest zoom level for a proposed size
+    func snapToNearest(proposedSize: CGFloat) {
+        let nearest = ZoomLevel.nearest(to: proposedSize)
+        currentLevelIndex = nearest.id
+    }
+}
+
+// MARK: - Color Extensions
+
 extension Color {
     /// Initialize from hex string (e.g., "#FF5500" or "FF5500")
     init?(hex: String) {

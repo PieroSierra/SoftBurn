@@ -12,6 +12,8 @@ struct PhotoGridView: View {
     let photos: [MediaItem]
     @Binding var selectedPhotoIDs: Set<UUID>
     var toolbarInset: CGFloat = 0
+    var zoomPointSize: CGFloat = 220  // Current zoom level in points
+    var onZoomLevelChange: ((Int) -> Void)?  // Callback when pinch gesture changes zoom
     let onUserClickItem: (UUID) -> Void
     let onOpenViewer: (UUID) -> Void
     let onPreviewSelection: () -> Void
@@ -19,12 +21,14 @@ struct PhotoGridView: View {
     let onReorderToIndex: ([UUID], Int) -> Void // sourceIDs (all selected), destination insertion index
     let onDragStart: (UUID) -> Void // Called when drag starts to select the item
     let onDeselectAll: () -> Void // Called when clicking on whitespace
-    
+
     var body: some View {
         MediaGridCollectionView(
             photos: photos,
             selectedPhotoIDs: $selectedPhotoIDs,
             toolbarInset: toolbarInset,
+            zoomPointSize: zoomPointSize,
+            onZoomLevelChange: onZoomLevelChange,
             onUserClickItem: onUserClickItem,
             onOpenViewer: onOpenViewer,
             onPreviewSelection: onPreviewSelection,

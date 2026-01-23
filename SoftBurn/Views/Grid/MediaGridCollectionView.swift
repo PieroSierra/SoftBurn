@@ -16,9 +16,15 @@ extension NSPasteboard.PasteboardType {
 struct MediaGridCollectionView: NSViewRepresentable {
     let photos: [MediaItem]
     @Binding var selectedPhotoIDs: Set<UUID>
-    
+
     /// Extra top inset so content can scroll under a translucent toolbar.
     var toolbarInset: CGFloat = 0
+
+    /// Current zoom level in points (100, 140, 220, 320, 420, 680)
+    var zoomPointSize: CGFloat = 220
+
+    /// Callback when pinch gesture changes zoom level
+    var onZoomLevelChange: ((Int) -> Void)?
 
     /// Called when user clicks an item (used to update "last selected index" anchor in SwiftUI).
     let onUserClickItem: (UUID) -> Void
@@ -54,6 +60,11 @@ struct MediaGridCollectionView: NSViewRepresentable {
             self.onDropFiles(urls)
         }
 
+        // Wire up zoom level change callback for pinch gestures
+        container.onZoomLevelChange = { newLevelIndex in
+            self.onZoomLevelChange?(newLevelIndex)
+        }
+
         // Collection view callbacks
         container.collectionView.onClickedWhitespace = {
             self.onDeselectAll()
@@ -69,13 +80,14 @@ struct MediaGridCollectionView: NSViewRepresentable {
         }
 
         // Wire up coordinator
-        context.coordinator.attach(to: container.collectionView)
+        context.coordinator.attach(to: container.collectionView, container: container)
         return container
     }
 
     func updateNSView(_ nsView: MediaGridContainerView, context: Context) {
         context.coordinator.parent = self
         nsView.toolbarInset = toolbarInset
+        nsView.updateZoomLevel(to: zoomPointSize, animated: true)
         context.coordinator.apply(photos: photos, to: nsView.collectionView)
         context.coordinator.syncSelection(to: nsView.collectionView, selectedIDs: selectedPhotoIDs)
     }
@@ -87,6 +99,7 @@ struct MediaGridCollectionView: NSViewRepresentable {
         var parent: MediaGridCollectionView
 
         private weak var collectionView: MediaCollectionView?
+        private weak var container: MediaGridContainerView?
         private var dataSource: NSCollectionViewDiffableDataSource<Int, UUID>?
 
         private var currentPhotos: [MediaItem] = []
@@ -107,8 +120,9 @@ struct MediaGridCollectionView: NSViewRepresentable {
             self.parent = parent
         }
 
-        func attach(to collectionView: MediaCollectionView) {
+        func attach(to collectionView: MediaCollectionView, container: MediaGridContainerView) {
             self.collectionView = collectionView
+            self.container = container
             collectionView.delegate = self
             collectionView.onSelectionIndexPathsChanged = { [weak self, weak collectionView] in
                 guard let self, let cv = collectionView else { return }
@@ -226,6 +240,7 @@ struct MediaGridCollectionView: NSViewRepresentable {
                     return currentPhotos[ip.item].id
                 }
             currentlyDraggingIDs = ordered
+            container?.isDragging = true
 
             if let first = ordered.first {
                 parent.onDragStart(first)
@@ -370,6 +385,7 @@ struct MediaGridCollectionView: NSViewRepresentable {
 
         func collectionView(_ collectionView: NSCollectionView, draggingSession session: NSDraggingSession, endedAt screenPoint: NSPoint, dragOperation operation: NSDragOperation) {
             currentlyDraggingIDs.removeAll()
+            container?.isDragging = false
             hideDropPlaceholder(animated: true)
         }
 
@@ -508,7 +524,20 @@ final class MediaGridContainerView: NSView {
     let collectionView = MediaCollectionView()
 
     private let flowLayout = NSCollectionViewFlowLayout()
-    
+
+    /// Current zoom point size (100, 140, 220, 320, 420, 680)
+    private var currentZoomPointSize: CGFloat = 220
+
+    /// Magnification gesture accumulator for debounced snapping
+    private var magnificationAccumulator: CGFloat = 0
+    private var debounceWorkItem: DispatchWorkItem?
+
+    /// Flag to defer zoom during drag operations
+    var isDragging: Bool = false
+
+    /// Callback to update zoom state (set by coordinator)
+    var onZoomLevelChange: ((Int) -> Void)?
+
     /// Extra top inset so content scrolls under the toolbar but starts below it.
     var toolbarInset: CGFloat = 0 {
         didSet { updateContentInsets() }
@@ -560,6 +589,49 @@ final class MediaGridContainerView: NSView {
         scrollView.onPerformExternalDrop = { [weak self] urls in
             self?.onPerformExternalDrop?(urls)
         }
+
+        // Wire up magnification gesture for pinch-to-zoom
+        collectionView.onMagnify = { [weak self] delta in
+            self?.handleMagnification(delta)
+        }
+    }
+
+    /// Handle trackpad magnification gesture (pinch-to-zoom)
+    func handleMagnification(_ delta: CGFloat) {
+        // Defer zoom during drag operations
+        guard !isDragging else { return }
+
+        // Accumulate magnification deltas
+        magnificationAccumulator += delta
+
+        // Debounce: schedule snap after gesture settles
+        debounceWorkItem?.cancel()
+        debounceWorkItem = DispatchWorkItem { [weak self] in
+            self?.snapToNearestZoomLevel()
+        }
+        if let workItem = debounceWorkItem {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: workItem)
+        }
+    }
+
+    /// Snap to the nearest discrete zoom level based on accumulated magnification
+    private func snapToNearestZoomLevel() {
+        let accumulated = magnificationAccumulator
+        magnificationAccumulator = 0
+
+        // Ignore tiny movements
+        guard abs(accumulated) > 0.05 else { return }
+
+        // Calculate proposed size based on current size and accumulated magnification
+        let proposedSize = currentZoomPointSize * (1 + accumulated)
+
+        // Find nearest zoom level
+        let nearest = ZoomLevel.nearest(to: proposedSize)
+
+        // Only update if it's a different level
+        if nearest.pointSize != currentZoomPointSize {
+            onZoomLevelChange?(nearest.id)
+        }
     }
     
     private func updateContentInsets() {
@@ -571,23 +643,77 @@ final class MediaGridContainerView: NSView {
 
     override func layout() {
         super.layout()
-        updateItemSizing()
+        updateItemSizingForCurrentZoom()
     }
 
-    private func updateItemSizing() {
-        guard let contentView = scrollView.contentView as NSClipView? else { return }
-        let availableWidth = max(1, contentView.bounds.width - flowLayout.sectionInset.left - flowLayout.sectionInset.right)
+    /// Updates the zoom level with optional animation
+    /// - Parameters:
+    ///   - pointSize: Target thumbnail size in points (100, 140, 220, 320, 420, 680)
+    ///   - animated: Whether to animate the transition
+    func updateZoomLevel(to pointSize: CGFloat, animated: Bool = true) {
+        guard pointSize != currentZoomPointSize else { return }
+        currentZoomPointSize = pointSize
 
-        let minW: CGFloat = 180
-        let maxW: CGFloat = 220
-        let spacing: CGFloat = flowLayout.minimumInteritemSpacing
+        let newSize = NSSize(width: pointSize, height: pointSize)
+        guard flowLayout.itemSize != newSize else { return }
 
-        let columns = max(1, Int(floor((availableWidth + spacing) / (minW + spacing))))
-        let totalSpacing = CGFloat(max(0, columns - 1)) * spacing
-        let rawItemW = floor((availableWidth - totalSpacing) / CGFloat(columns))
-        let itemW = max(minW, min(maxW, rawItemW))
+        if animated {
+            // Capture scroll position before animation
+            let savedScrollPosition = captureScrollPosition()
 
-        let newSize = NSSize(width: itemW, height: itemW)
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.25
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                flowLayout.itemSize = newSize
+                flowLayout.invalidateLayout()
+            } completionHandler: { [weak self] in
+                self?.restoreScrollPosition(savedScrollPosition)
+            }
+        } else {
+            flowLayout.itemSize = newSize
+            flowLayout.invalidateLayout()
+        }
+    }
+
+    /// Capture scroll position as the first visible item and offset from top
+    private func captureScrollPosition() -> (indexPath: IndexPath?, offsetFromTop: CGFloat) {
+        guard let clipView = scrollView.contentView as? NSClipView else {
+            return (nil, 0)
+        }
+
+        let visibleItems = collectionView.visibleItems()
+        guard let firstVisibleItem = visibleItems.first,
+              let indexPath = collectionView.indexPath(for: firstVisibleItem) else {
+            return (nil, clipView.bounds.origin.y)
+        }
+
+        let itemFrame = firstVisibleItem.view.frame
+        let offsetFromTop = clipView.bounds.origin.y - itemFrame.origin.y
+        return (indexPath, offsetFromTop)
+    }
+
+    /// Restore scroll position after layout change
+    private func restoreScrollPosition(_ savedPosition: (indexPath: IndexPath?, offsetFromTop: CGFloat)) {
+        guard let clipView = scrollView.contentView as? NSClipView else { return }
+
+        if let indexPath = savedPosition.indexPath,
+           let item = collectionView.item(at: indexPath) {
+            let itemFrame = item.view.frame
+            let newScrollY = itemFrame.origin.y + savedPosition.offsetFromTop
+
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            var bounds = clipView.bounds
+            bounds.origin.y = max(0, newScrollY)
+            clipView.bounds = bounds
+            scrollView.reflectScrolledClipView(clipView)
+            CATransaction.commit()
+        }
+    }
+
+    private func updateItemSizingForCurrentZoom() {
+        // Use the current zoom point size directly as the item size
+        let newSize = NSSize(width: currentZoomPointSize, height: currentZoomPointSize)
         if flowLayout.itemSize != newSize {
             flowLayout.itemSize = newSize
             flowLayout.invalidateLayout()
@@ -631,6 +757,7 @@ final class MediaCollectionView: NSCollectionView {
     var onItemDoubleClick: ((UUID) -> Void)?
     var onPreviewSelection: (() -> Void)?
     var onSelectionIndexPathsChanged: (() -> Void)?
+    var onMagnify: ((CGFloat) -> Void)?  // Pinch gesture handler
 
     private var marqueeStartPoint: NSPoint?
     private var marqueeInitialSelection: Set<IndexPath> = []
@@ -644,6 +771,10 @@ final class MediaCollectionView: NSCollectionView {
         if !indexPaths.isEmpty {
             selectItems(at: indexPaths, scrollPosition: [])
         }
+    }
+
+    override func magnify(with event: NSEvent) {
+        onMagnify?(event.magnification)
     }
 
     override func mouseDown(with event: NSEvent) {
