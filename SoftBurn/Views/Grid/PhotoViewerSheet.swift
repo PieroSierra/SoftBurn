@@ -120,13 +120,6 @@ struct PhotoViewerSheet: View {
                 hudButton(systemName: "rotate.left") { rotateCurrentPhoto() }
                     .help("Rotate counterclockwise")
                     .disabled(currentItem?.kind != .photo)
-
-                hudButton(
-                    systemName: "play.fill",
-                    foregroundColor: (slideshowState.photos.isEmpty ? Color.secondary : Color.blue)
-                ) { playFromCurrentPhoto() }
-                .help("Play slideshow from this photo")
-                .disabled(slideshowState.photos.isEmpty)
             }
                 .padding(12)
         }
