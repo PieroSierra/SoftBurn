@@ -26,6 +26,13 @@ enum FileImportMode {
     case slideshow
 }
 
+/// Toolbar style override for previews
+enum ToolbarStyleOverride {
+    case automatic  // Use OS version detection
+    case liquidGlass  // Force LiquidGlass toolbar (macOS 26+ style)
+    case classic  // Force classic toolbar (pre-macOS 26 style)
+}
+
 struct ContentView: View {
     @StateObject private var slideshowState = SlideshowState()
     @StateObject private var gridZoomState = GridZoomState.shared
@@ -33,6 +40,25 @@ struct ContentView: View {
     @ObservedObject private var recentsManager = RecentSlideshowsManager.shared
     @EnvironmentObject private var session: AppSessionState
     @State private var isImporting = false
+
+    /// Override for toolbar style (used in previews)
+    var toolbarStyleOverride: ToolbarStyleOverride = .automatic
+
+    /// Computed property to determine if we should use LiquidGlass toolbar
+    private var useLiquidGlassToolbar: Bool {
+        switch toolbarStyleOverride {
+        case .automatic:
+            if #available(macOS 26.0, *) {
+                return true
+            } else {
+                return false
+            }
+        case .liquidGlass:
+            return true
+        case .classic:
+            return false
+        }
+    }
     @State private var importMode: FileImportMode = .photos
     @State private var isSaving = false
     @State private var exportDocument = SlideshowFileDocument(photos: [])
@@ -109,16 +135,16 @@ struct ContentView: View {
             // Background color for the window
             Color(NSColor.controlBackgroundColor)
                 .ignoresSafeArea()
-            
+
             // Main content area (fills entire space, scrolls under toolbar)
             contentArea
                 .ignoresSafeArea(edges: .top) // Extend under system toolbar on macOS 26
-            
-            // On older macOS, overlay our custom toolbar + fade gradient
-            if #unavailable(macOS 26.0) {
+
+            // On older macOS (or when forced to classic), overlay our custom toolbar + fade gradient
+            if !useLiquidGlassToolbar {
                 VStack(spacing: 0) {
                     toolbar
-                    
+
                     // Fade gradient so content fades as it scrolls under toolbar
                     LinearGradient(
                         colors: [
@@ -129,12 +155,12 @@ struct ContentView: View {
                         endPoint: .bottom
                     )
                     .frame(height: 20)
-                    
+
                     Spacer()
                 }
             }
             // On macOS 26, the Liquid Glass toolbar handles its own blending - no extra gradient needed
-            
+
             // Full-screen overlay viewer (no sheet chrome)
             if isShowingViewer, let startID = viewerStartID {
                 PhotoViewerSheet(
@@ -155,7 +181,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 800, minHeight: 600)
         .toolbar {
-            if #available(macOS 26.0, *) {
+            if #available(macOS 26.0, *), useLiquidGlassToolbar {
                 // Left side: File and Add menus
                 ToolbarItemGroup(placement: .navigation) {
                     // File dropdown
@@ -252,17 +278,14 @@ struct ContentView: View {
                     
 
                 }
-                
-                
 
-                // Center status
+                // Center status (always render to maintain toolbar spacing)
                 ToolbarItem(placement: .principal) {
-                    if !slideshowState.isEmpty {
-                        Text(photoCountText)
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                            .opacity(isShowingViewer ? 0.4 : 1.0) // Dim when viewer is open
-                    }
+                    Text(slideshowState.isEmpty ? "" : photoCountText)
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .opacity(isShowingViewer ? 0.4 : 1.0) // Dim when viewer is open
+                        .frame(maxWidth: .infinity) // Expand to fill available space
                 }
 
                 // Trailing controls - disabled when viewer is open
@@ -337,6 +360,7 @@ struct ContentView: View {
                 }
             }
         }
+        .toolbar(removing: .title)
         .softBurnWindowToolbarLiquidGlass()
     }
 
@@ -764,24 +788,27 @@ struct ContentView: View {
 
             // Right side buttons - disabled when viewer is open
             HStack(spacing: 12) {
-                // Zoom controls
-                Button(action: {
-                    gridZoomState.zoomOut()
-                }) {
-                    Image(systemName: "minus")
-                        .frame(width: 20, height: 20)
-                }
-                .help("Zoom out")
-                .disabled(!gridZoomState.canZoomOut || slideshowState.isEmpty || isShowingViewer)
+                // Zoom controls group
+                ControlGroup {
+                    Button(action: {
+                        gridZoomState.zoomOut()
+                    }) {
+                        Image(systemName: "minus")
+                            .frame(width: 20, height: 20)
+                    }
+                    .help("Zoom out")
+                    .disabled(!gridZoomState.canZoomOut || slideshowState.isEmpty || isShowingViewer)
 
-                Button(action: {
-                    gridZoomState.zoomIn()
-                }) {
-                    Image(systemName: "plus")
-                        .frame(width: 20, height: 20)
+                    Button(action: {
+                        gridZoomState.zoomIn()
+                    }) {
+                        Image(systemName: "plus")
+                            .frame(width: 20, height: 20)
+                    }
+                    .help("Zoom in")
+                    .disabled(!gridZoomState.canZoomIn || slideshowState.isEmpty || isShowingViewer)
                 }
-                .help("Zoom in")
-                .disabled(!gridZoomState.canZoomIn || slideshowState.isEmpty || isShowingViewer)
+
 
                 Button(action: {
                     if let photoID = slideshowState.singleSelectedPhotoID {
@@ -793,7 +820,7 @@ struct ContentView: View {
                 }
                 .help("Rotate counterclockwise")
                 .disabled(!slideshowState.hasSinglePhotoSelection || isShowingViewer)
-                
+
                 Button(action: {
                     slideshowState.removeSelectedPhotos()
                 }) {
@@ -803,6 +830,8 @@ struct ContentView: View {
                 .help("Remove from slideshow")
                 .disabled(!slideshowState.hasSelection || isShowingViewer)
                 
+
+                // Settings button (standalone for proper popover anchoring)
                 Button(action: {
                     showSettings.toggle()
                 }) {
@@ -814,14 +843,14 @@ struct ContentView: View {
                 .popover(isPresented: $showSettings, arrowEdge: .bottom) {
                     SettingsPopoverView(settings: settings)
                 }
-                
+
+                // Play button
                 Button(action: {
                     startSlideshow()
                 }) {
                     Image(systemName: "play.fill")
                         .frame(width: 20, height: 20)
                         .foregroundStyle((slideshowState.isEmpty || isShowingViewer) ? Color.secondary : Color.blue)
-                    Text("Play")
                 }
                 .help("Play slideshow")
                 .disabled(slideshowState.isEmpty || isShowingViewer)
@@ -1254,6 +1283,14 @@ class SlideshowWindowController: NSObject, NSWindowDelegate {
     }
 }
 
-#Preview {
-    ContentView()
+// MARK: - Previews
+
+#Preview("LiquidGlass") {
+    ContentView(toolbarStyleOverride: .liquidGlass)
+        .environmentObject(AppSessionState.shared)
+}
+
+#Preview("Classic Toolbar") {
+    ContentView(toolbarStyleOverride: .classic)
+        .environmentObject(AppSessionState.shared)
 }
