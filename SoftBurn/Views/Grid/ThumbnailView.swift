@@ -41,17 +41,6 @@ struct ThumbnailView: View {
                         .foregroundColor(.secondary)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
-                
-                // Drag indicator overlay in upper-left corner
-                Image(systemName: "circle.grid.2x2.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white)
-                    .padding(6)
-                  /*  .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.black.opacity(0.5))
-                    )*/
-                    .padding(8)
 
                 // Video duration overlay (bottom-right)
                 if photo.kind == .video, let t = videoDurationText {

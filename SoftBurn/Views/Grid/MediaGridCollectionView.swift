@@ -710,7 +710,7 @@ final class MediaGridContainerView: NSView {
         addSubview(overlay, positioned: .above, relativeTo: scrollView)
         animationOverlayView = overlay
 
-        guard let overlayLayer = overlay.layer else {
+        guard overlay.layer != nil else {
             flowLayout.itemSize = NSSize(width: newSize, height: newSize)
             flowLayout.invalidateLayout()
             return
@@ -746,7 +746,9 @@ final class MediaGridContainerView: NSView {
         } completionHandler: { [weak self] in
             guard let self else { return }
             overlay.removeFromSuperview()
-            self.animationOverlayView = nil
+            MainActor.assumeIsolated {
+                self.animationOverlayView = nil
+            }
 
             // Fade in new layout
             NSAnimationContext.runAnimationGroup { ctx in
@@ -1031,8 +1033,6 @@ final class MediaThumbnailCellView: NSView {
     private let progress = NSProgressIndicator()
     private let placeholder = NSImageView()
 
-    private let dragIcon = NSImageView()
-
     private let durationContainer = NSView()
     private let durationEffect = NSVisualEffectView()
     private let durationLabel = NSTextField(labelWithString: "")
@@ -1098,10 +1098,6 @@ final class MediaThumbnailCellView: NSView {
         progress.controlSize = .small
         progress.isDisplayedWhenStopped = false
 
-        dragIcon.image = NSImage(systemSymbolName: "circle.grid.2x2.fill", accessibilityDescription: nil)
-        dragIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
-        dragIcon.contentTintColor = .white
-
         durationEffect.material = .hudWindow
         durationEffect.blendingMode = .withinWindow
         durationEffect.state = .active
@@ -1123,7 +1119,6 @@ final class MediaThumbnailCellView: NSView {
         addSubview(imageContainer)
         addSubview(progress)
         addSubview(placeholder)
-        addSubview(dragIcon)
         addSubview(durationContainer)
         addSubview(selectionOverlay)
 
@@ -1151,7 +1146,6 @@ final class MediaThumbnailCellView: NSView {
         imageContainer.translatesAutoresizingMaskIntoConstraints = false
         progress.translatesAutoresizingMaskIntoConstraints = false
         placeholder.translatesAutoresizingMaskIntoConstraints = false
-        dragIcon.translatesAutoresizingMaskIntoConstraints = true
         // Duration pill is laid out manually (avoid Auto Layout collapsing the container).
         durationContainer.translatesAutoresizingMaskIntoConstraints = true
         durationEffect.translatesAutoresizingMaskIntoConstraints = true
@@ -1202,7 +1196,6 @@ final class MediaThumbnailCellView: NSView {
         super.layout()
         backgroundView.layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 8, cornerHeight: 8, transform: nil)
         layoutImageLayer()
-        layoutDragIcon()
         updateSelectionPaths()
         layoutDurationPill()
     }
@@ -1243,7 +1236,8 @@ final class MediaThumbnailCellView: NSView {
         let paddingY: CGFloat = 4
 
         let labelSize = durationLabel.intrinsicContentSize
-        let pillW = labelSize.width + paddingX * 2
+        let labelWidth = ceil(labelSize.width) + 2  // Add small buffer to prevent clipping
+        let pillW = labelWidth + paddingX * 2
         let pillH = labelSize.height + paddingY * 2
 
         let anchorRect = currentImageRect.isEmpty ? bounds : currentImageRect
@@ -1251,7 +1245,7 @@ final class MediaThumbnailCellView: NSView {
 
         durationContainer.frame = CGRect(origin: origin, size: CGSize(width: pillW, height: pillH))
         durationEffect.frame = durationContainer.bounds
-        durationLabel.frame = CGRect(x: paddingX, y: paddingY, width: labelSize.width, height: labelSize.height)
+        durationLabel.frame = CGRect(x: paddingX, y: paddingY, width: labelWidth, height: labelSize.height)
         durationEffect.layer?.cornerRadius = pillH / 2
     }
 
@@ -1274,13 +1268,6 @@ final class MediaThumbnailCellView: NSView {
         currentImageRect = rect
         imageLayer.frame = rect
         imageLayer.cornerRadius = 8
-    }
-
-    private func layoutDragIcon() {
-        let inset: CGFloat = 10
-        let size: CGFloat = 20
-        let anchor = currentImageRect.isEmpty ? bounds : currentImageRect
-        dragIcon.frame = CGRect(x: anchor.minX + inset, y: anchor.maxY - inset - size, width: size, height: size)
     }
 
     func configure(with media: MediaItem) {
@@ -1364,7 +1351,6 @@ final class MediaThumbnailCellView: NSView {
         imageContainer.isHidden = isPlaceholder
         progress.isHidden = isPlaceholder
         placeholder.isHidden = true
-        dragIcon.isHidden = isPlaceholder
         durationContainer.isHidden = true
         outerSelectionLayer.isHidden = true
         innerSelectionLayer.isHidden = true
