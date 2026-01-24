@@ -12,6 +12,19 @@ extension NSPasteboard.PasteboardType {
     static let softburnMediaID = NSPasteboard.PasteboardType("com.softburn.media-id")
 }
 
+// MARK: - NSView Snapshot Helper
+
+private extension NSView {
+    /// Creates a snapshot image of the view's current appearance.
+    func snapshot() -> NSImage? {
+        guard let bitmapRep = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+        cacheDisplay(in: bounds, to: bitmapRep)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(bitmapRep)
+        return image
+    }
+}
+
 /// AppKit-backed thumbnail grid embedded in SwiftUI.
 struct MediaGridCollectionView: NSViewRepresentable {
     let photos: [MediaItem]
@@ -646,55 +659,107 @@ final class MediaGridContainerView: NSView {
         updateItemSizingForCurrentZoom()
     }
 
+    /// Overlay view used during zoom animations (snapshot of previous state)
+    private var animationOverlayView: NSView?
+
     /// Updates the zoom level with optional animation
     /// - Parameters:
     ///   - pointSize: Target thumbnail size in points (100, 140, 220, 320, 420, 680)
     ///   - animated: Whether to animate the transition
     func updateZoomLevel(to pointSize: CGFloat, animated: Bool = true) {
         guard pointSize != currentZoomPointSize else { return }
+        let oldSize = currentZoomPointSize
         currentZoomPointSize = pointSize
 
         let newSize = NSSize(width: pointSize, height: pointSize)
         guard flowLayout.itemSize != newSize else { return }
 
         if animated {
-            // Capture scroll position before animation
-            let savedScrollPosition = captureScrollPosition()
-
-            // Cross-fade animation: fade out, update layout, fade in
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.15
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                collectionView.animator().alphaValue = 0.0
-            } completionHandler: { [weak self] in
-                guard let self = self else { return }
-
-                // Update layout while faded out
-                self.flowLayout.itemSize = newSize
-                self.flowLayout.invalidateLayout()
-                self.collectionView.layoutSubtreeIfNeeded()
-
-                // Restore scroll position
-                self.restoreScrollPosition(savedScrollPosition)
-
-                // Fade back in
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.15
-                    ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                    self.collectionView.animator().alphaValue = 1.0
-                }
-            }
+            performZoomCrossFadeAnimation(from: oldSize, to: pointSize)
         } else {
             flowLayout.itemSize = newSize
             flowLayout.invalidateLayout()
         }
     }
 
+    /// Performs a cross-fade zoom animation where the old view scales and fades out
+    /// while the new layout fades in.
+    private func performZoomCrossFadeAnimation(from oldSize: CGFloat, to newSize: CGFloat) {
+        // Cancel any in-progress animation
+        if let existingOverlay = animationOverlayView {
+            existingOverlay.layer?.removeAllAnimations()
+            existingOverlay.removeFromSuperview()
+            animationOverlayView = nil
+        }
+
+        // 1. Capture scroll position
+        let savedScrollPosition = captureScrollPosition()
+
+        // 2. Create snapshot
+        guard let snapshotImage = scrollView.snapshot() else {
+            flowLayout.itemSize = NSSize(width: newSize, height: newSize)
+            flowLayout.invalidateLayout()
+            return
+        }
+
+        // 3. Create overlay using a raw CALayer for direct animation control
+        let overlay = NSView(frame: scrollView.frame)
+        overlay.wantsLayer = true
+        overlay.layer?.contents = snapshotImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        overlay.layer?.contentsGravity = .resizeAspectFill
+        addSubview(overlay, positioned: .above, relativeTo: scrollView)
+        animationOverlayView = overlay
+
+        guard let overlayLayer = overlay.layer else {
+            flowLayout.itemSize = NSSize(width: newSize, height: newSize)
+            flowLayout.invalidateLayout()
+            return
+        }
+
+        // 4. Update layout while overlay covers it
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        collectionView.alphaValue = 0.0
+        flowLayout.itemSize = NSSize(width: newSize, height: newSize)
+        flowLayout.invalidateLayout()
+        collectionView.layoutSubtreeIfNeeded()
+        restoreScrollPosition(savedScrollPosition)
+        CATransaction.commit()
+
+        // 5. Calculate animation parameters - animate the frame to scale from center
+        let duration: TimeInterval = 0.25
+        let scaleFactor = newSize / oldSize
+        let currentFrame = overlay.frame
+        let newWidth = currentFrame.width * scaleFactor
+        let newHeight = currentFrame.height * scaleFactor
+        let newX = currentFrame.origin.x - (newWidth - currentFrame.width) / 2
+        let newY = currentFrame.origin.y - (newHeight - currentFrame.height) / 2
+        let targetFrame = CGRect(x: newX, y: newY, width: newWidth, height: newHeight)
+
+        // 6. Animate using NSView frame animation (which animator() supports)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = duration
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            ctx.allowsImplicitAnimation = true
+            overlay.animator().frame = targetFrame
+            overlay.animator().alphaValue = 0.0
+        } completionHandler: { [weak self] in
+            guard let self else { return }
+            overlay.removeFromSuperview()
+            self.animationOverlayView = nil
+
+            // Fade in new layout
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.15
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                self.collectionView.animator().alphaValue = 1.0
+            }
+        }
+    }
+
     /// Capture scroll position as the first visible item and offset from top
     private func captureScrollPosition() -> (indexPath: IndexPath?, offsetFromTop: CGFloat) {
-        guard let clipView = scrollView.contentView as? NSClipView else {
-            return (nil, 0)
-        }
+        let clipView = scrollView.contentView
 
         let visibleItems = collectionView.visibleItems()
         guard let firstVisibleItem = visibleItems.first,
@@ -709,7 +774,7 @@ final class MediaGridContainerView: NSView {
 
     /// Restore scroll position after layout change
     private func restoreScrollPosition(_ savedPosition: (indexPath: IndexPath?, offsetFromTop: CGFloat)) {
-        guard let clipView = scrollView.contentView as? NSClipView else { return }
+        let clipView = scrollView.contentView
 
         if let indexPath = savedPosition.indexPath,
            let item = collectionView.item(at: indexPath) {
