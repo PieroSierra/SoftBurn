@@ -278,7 +278,7 @@ struct ContentView: View {
                         .disabled(!gridZoomState.canZoomOut || slideshowState.isEmpty || isShowingViewer)
                         
                         Rectangle()
-                            .fill(Color.gray.opacity(0.4))
+                            .fill(Color.gray.opacity(0.3))
                             .frame(width: 1, height: 16)
                     
                         Button(action: {
