@@ -661,13 +661,28 @@ final class MediaGridContainerView: NSView {
             // Capture scroll position before animation
             let savedScrollPosition = captureScrollPosition()
 
+            // Cross-fade animation: fade out, update layout, fade in
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.25
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                flowLayout.itemSize = newSize
-                flowLayout.invalidateLayout()
+                ctx.duration = 0.15
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                collectionView.animator().alphaValue = 0.0
             } completionHandler: { [weak self] in
-                self?.restoreScrollPosition(savedScrollPosition)
+                guard let self = self else { return }
+
+                // Update layout while faded out
+                self.flowLayout.itemSize = newSize
+                self.flowLayout.invalidateLayout()
+                self.collectionView.layoutSubtreeIfNeeded()
+
+                // Restore scroll position
+                self.restoreScrollPosition(savedScrollPosition)
+
+                // Fade back in
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.15
+                    ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                    self.collectionView.animator().alphaValue = 1.0
+                }
             }
         } else {
             flowLayout.itemSize = newSize
