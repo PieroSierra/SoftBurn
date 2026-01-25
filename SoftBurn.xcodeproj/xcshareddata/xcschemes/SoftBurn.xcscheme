@@ -50,9 +50,6 @@
             ReferencedContainer = "container:SoftBurn.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <StoreKitConfigurationFileReference
-         identifier = "../../SoftBurn/SoftBurnTips.storekit/Configuration.storekit">
-      </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

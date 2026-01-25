@@ -388,7 +388,8 @@ struct ContentView: View {
         ) { result in
             // Silently handle save result
             switch result {
-            case .success:
+            case .success(let savedURL):
+                recentsManager.addOrUpdate(url: savedURL)
                 session.markClean()
                 session.performPendingActionAfterSuccessfulSave()
             case .failure(let error):
