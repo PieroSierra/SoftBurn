@@ -34,11 +34,11 @@ struct PatinaRange {
 
 struct Patina35mmTuning: Codable {
     // **grainFineness**: lower = bigger grain (typical: 400–1200)
-    var grainFineness: Float = 675
+    var grainFineness: Float = 815.965
     // **grainIntensity**: 0..0.10
-    var grainIntensity: Float = 0.050
+    var grainIntensity: Float = 0.049984
     // **blurRadiusTexels**: 0..2
-    var blurRadiusTexels: Float = 0.85
+    var blurRadiusTexels: Float = 0.617781
 
     // **toneMultiplyRGB**: subtle film-stock bias
     var toneR: Float = 1.02
@@ -46,17 +46,17 @@ struct Patina35mmTuning: Codable {
     var toneB: Float = 0.985
 
     // **blackLift**: 0..0.05
-    var blackLift: Float = 0.020
+    var blackLift: Float = 0.02
     // **contrast**: 0.85..1.0 (lower = flatter/matte)
-    var contrast: Float = 0.92
+    var contrast: Float = 0.988194
 
     // **highlight rolloff**
     var rolloffThreshold: Float = 0.78  // 0.7..0.9
     var rolloffSoftness: Float = 3.2    // 1..6
 
     // **vignette**
-    var vignetteStrength: Float = 0.10  // 0..0.30
-    var vignetteRadius: Float = 0.88    // 0.80..0.95
+    var vignetteStrength: Float = 0.0668097  // 0..0.30
+    var vignetteRadius: Float = 0.911445     // 0.80..0.95
 
     static let ranges: [String: PatinaRange] = [
         "grainFineness": .init(min: 300, max: 1400, step: 1),
@@ -78,34 +78,35 @@ struct Patina35mmTuning: Codable {
 
 struct PatinaAgedFilmTuning: Codable {
     var grainFineness: Float = 250         // 250..1000
-    var grainIntensity: Float = 0.114215   // 0..0.12
-    var blurRadiusTexels: Float = 2.00512  // 0..3
+    var grainIntensity: Float = 0.0737154  // 0..0.12
+    var blurRadiusTexels: Float = 3.0      // 0..3
 
     // Jitter/weave (sub-pixel), in texels
     var jitterAmplitudeTexels: Float = 2.16752 // 0..3
 
     // Drift / breathing
-    var driftSpeed: Float = 0.973222       // 0..1
-    var driftIntensity: Float = 0.029116   // 0..0.05
+    var driftSpeed: Float = 0.976296       // 0..1
+    var driftIntensity: Float = 0.0121638  // 0..0.05
 
     // Occasional dim pulse
-    var dimPulseSpeed: Float = 0.900508         // 0..1
-    var dimPulseThreshold: Float = 0.985        // 0.90..0.999
-    var dimPulseIntensity: Float = -0.025       // -0.06..0
+    var dimPulseSpeed: Float = 0.907862        // 0..1
+    var dimPulseThreshold: Float = 0.988496    // 0.90..0.999
+    var dimPulseIntensity: Float = -0.031574   // -0.06..0
 
     // Highlight/shadow shaping
     var highlightSoftThreshold: Float = 0.75 // 0.6..0.9
     var highlightSoftAmount: Float = 0.15    // 0..0.4
     var shadowLiftThreshold: Float = 0.15    // 0..0.3
-    var shadowLiftAmount: Float = 0.08       // 0..0.3
+    var shadowLiftAmount: Float = 0.193644   // 0..0.3
 
     // Vignette
-    var vignetteStrength: Float = 0.191863 // 0..0.40
+    var vignetteStrength: Float = 0.2104   // 0..0.40
     var vignetteRadius: Float = 0.75       // 0.75..0.95
 
     // Dust
-    var dustRate: Float = 0.00674489       // 0..0.01
-    var dustIntensity: Float = 0.338525    // 0..0.6
+    var dustRate: Float = 0.00306438       // 0..0.01
+    var dustIntensity: Float = 0.133389    // 0..0.6
+    var dustSize: Float = 18.8924          // 1..20 (larger = thicker/more varied dust lines)
 
     static let ranges: [String: PatinaRange] = [
         "grainFineness": .init(min: 250, max: 1000, step: 1),
@@ -125,6 +126,7 @@ struct PatinaAgedFilmTuning: Codable {
         "vignetteRadius": .init(min: 0.75, max: 0.95, step: 0.001),
         "dustRate": .init(min: 0.0, max: 0.01, step: 0.0001),
         "dustIntensity": .init(min: 0.00, max: 0.60, step: 0.01),
+        "dustSize": .init(min: 1.0, max: 20.0, step: 0.1),
     ]
 }
 

@@ -57,7 +57,8 @@ struct PatinaParamsAgedFilm {
     float vignetteRadius;
     float dustRate;
     float dustIntensity;
-    float3 _pad0;
+    float dustSize;
+    float2 _pad0;
 };
 
 struct PatinaParamsVHS {
@@ -292,11 +293,28 @@ float3 applyAgedFilm(texture2d<float> tex, sampler s, float2 uv, float time, flo
     // Vignetting: noticeable but not theatrical.
     result *= vignetteMask(uv, p.vignetteStrength, p.vignetteRadius);
 
-    // Occasional faint dust specks (very sparse)
-    float dustChance = hash12(floor(uv * resolution * 0.5) + floor(time * 2.0));
+    // Occasional dust specks and scratches (thicker, more varied)
+    // Use larger cells for bigger dust particles and add randomness to size
+    float dustScale = max(1.0, p.dustSize);
+    float2 dustCell = floor(uv * resolution / dustScale);
+    float dustTime = floor(time * 2.0);
+    float dustChance = hash12(dustCell + dustTime);
     if (dustChance > (1.0 - p.dustRate)) {
-        float dustIntensity = hash12(uv * 1000.0 + time) * p.dustIntensity;
-        result -= dustIntensity;
+        // Random size variation within cell
+        float sizeVar = hash12(dustCell * 7.3 + dustTime) * 0.8 + 0.6; // 0.6 to 1.4
+        float2 dustCenter = (dustCell + 0.5) * dustScale / resolution;
+        float2 toCenter = uv - dustCenter;
+        float dustRadius = (dustScale * sizeVar * 0.5) / resolution.x;
+
+        // Soft-edged dust with random shape distortion
+        float shapeNoise = hash12(dustCell * 13.7);
+        float aspectRatio = 0.3 + shapeNoise * 1.4; // 0.3 to 1.7 for varied shapes (scratches vs specks)
+        float2 scaledDist = float2(toCenter.x, toCenter.y * aspectRatio);
+        float shapedDist = length(scaledDist);
+
+        float dustAlpha = 1.0 - smoothstep(0.0, dustRadius, shapedDist);
+        float dustDarkness = hash12(dustCell * 1000.0 + dustTime) * p.dustIntensity;
+        result -= dustDarkness * dustAlpha;
     }
     
     return saturate(result);
