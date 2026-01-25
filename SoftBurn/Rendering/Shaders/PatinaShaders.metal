@@ -87,6 +87,7 @@ struct PatinaParamsVHS {
     float tearOffsetTexels;
     float edgeSoftStrength;
     float scanlineBandWidth;  // Ratio of bright band (0.5-0.8)
+    float scanlineThickness;  // Multiplier for line thickness (1-10)
     float blackLift;          // Minimum black level (0-0.20)
 };
 
@@ -453,7 +454,8 @@ float3 applyVHS(texture2d<float> tex, sampler s, float2 uv, float time, float2 r
     float logicalResY = (currentRotation == 90 || currentRotation == 270) ? resolution.x : resolution.y;
 
     // Scanlines: gradient bands with wide bright areas, narrow dark lines
-    float freq = logicalResY * p.lineFrequencyScale * 0.5;  // Halve frequency for thicker bands
+    // scanlineThickness divides frequency to make lines thicker (fewer lines)
+    float freq = (logicalResY * p.lineFrequencyScale * 0.5) / max(1.0, p.scanlineThickness);
     float phase = fract(logicalUV.y * freq);
 
     // Asymmetric wave: bright band (e.g. 65%) with gradient edges, then dark gap

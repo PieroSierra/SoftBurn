@@ -127,6 +127,7 @@ private func dump(_ v: PatinaVHSTuning) -> String {
         scanlineAmp: \(fmt(v.scanlineAmp)),
         scanlinePow: \(fmt(v.scanlinePow)),
         lineFrequencyScale: \(fmt(v.lineFrequencyScale)),
+        scanlineThickness: \(fmt(v.scanlineThickness)),
         desat: \(fmt(v.desat)),
         tintR: \(fmt(v.tintR)),
         tintG: \(fmt(v.tintG)),
@@ -289,6 +290,7 @@ private struct PatinaVHSTuningTab: View {
                     SliderRow(title: "scanlineAmp", value: $vhs.scanlineAmp, range: PatinaVHSTuning.ranges["scanlineAmp"]!)
                     SliderRow(title: "scanlinePow", value: $vhs.scanlinePow, range: PatinaVHSTuning.ranges["scanlinePow"]!)
                     SliderRow(title: "lineFrequencyScale", value: $vhs.lineFrequencyScale, range: PatinaVHSTuning.ranges["lineFrequencyScale"]!)
+                    SliderRow(title: "scanlineThickness", value: $vhs.scanlineThickness, range: PatinaVHSTuning.ranges["scanlineThickness"]!)
                 }
 
                 GroupBox("Tone") {

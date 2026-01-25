@@ -945,6 +945,7 @@ final class MetalSlideshowRenderer {
         var tearOffsetTexels: Float
         var edgeSoftStrength: Float
         var scanlineBandWidth: Float
+        var scanlineThickness: Float
         var blackLift: Float
     }
 
@@ -1030,6 +1031,7 @@ final class MetalSlideshowRenderer {
             tearOffsetTexels: tuning.vhs.tearOffsetTexels,
             edgeSoftStrength: tuning.vhs.edgeSoftStrength,
             scanlineBandWidth: tuning.vhs.scanlineBandWidth,
+            scanlineThickness: tuning.vhs.scanlineThickness,
             blackLift: tuning.vhs.blackLift
         )
 

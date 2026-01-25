@@ -151,9 +151,10 @@ struct PatinaVHSTuning: Codable {
     // Lines
     var scanlineBase: Float = 0.96         // 0.7..1.0
     var scanlineAmp: Float = 0.180328      // 0..0.20
-    var scanlinePow: Float = 1.18387       // 0.1..2
+    var scanlinePow: Float = 1.48121       // 0.1..2
     var lineFrequencyScale: Float = 0.874821 // 0.4..1.0 (lower = thicker lines)
     var scanlineBandWidth: Float = 0.65    // 0.5..0.8 (ratio of bright band)
+    var scanlineThickness: Float = 3.82854 // 1..10 (multiplier for line thickness)
     var blackLift: Float = 0.08            // 0..0.20 (minimum black level)
 
     // Color/tone
@@ -173,7 +174,7 @@ struct PatinaVHSTuning: Codable {
     var tearGateThreshold: Float = 0.551752   // 0.5..0.99 (higher = rarer)
     var tearSpeed: Float = 0.0637713          // 0..2 (downward scan speed)
     var tearBandHeight: Float = 0.0411877     // 0.001..0.05 (UV)
-    var tearOffsetTexels: Float = 8.76785     // 0..10 (horizontal offset)
+    var tearOffsetTexels: Float = 2.87515     // 0..10 (horizontal offset)
 
     // Edge softness
     var edgeSoftStrength: Float = 0.0427662  // 0..0.10
@@ -191,6 +192,7 @@ struct PatinaVHSTuning: Codable {
         "scanlinePow": .init(min: 0.10, max: 2.0, step: 0.01),
         "lineFrequencyScale": .init(min: 0.40, max: 1.0, step: 0.01),
         "scanlineBandWidth": .init(min: 0.50, max: 0.80, step: 0.01),
+        "scanlineThickness": .init(min: 1.0, max: 10.0, step: 0.5),
         "blackLift": .init(min: 0.0, max: 0.20, step: 0.005),
         "desat": .init(min: 0.0, max: 1.0, step: 0.001),
         "tintR": .init(min: 0.80, max: 1.20, step: 0.001),
