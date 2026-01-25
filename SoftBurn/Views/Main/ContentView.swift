@@ -111,8 +111,8 @@ struct ContentView: View {
                 isImporting = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .openRecentSlideshow)) { notification in
-                guard let url = notification.object as? URL else { return }
-                openRecentSlideshow(url: url)
+                guard let recent = notification.object as? RecentSlideshow else { return }
+                openRecentSlideshow(recent: recent)
             }
             .onReceive(NotificationCenter.default.publisher(for: .clearRecentList)) { _ in
                 recentsManager.clearAll()
@@ -197,7 +197,7 @@ struct ContentView: View {
                         Menu {
                             ForEach(recentsManager.recentSlideshows) { recent in
                                 Button(recent.filename) {
-                                    openRecentSlideshow(url: recent.url)
+                                    openRecentSlideshow(recent: recent)
                                 }
                                 .disabled(!recent.fileExists)
                             }
@@ -689,7 +689,7 @@ struct ContentView: View {
                     Menu {
                         ForEach(recentsManager.recentSlideshows) { recent in
                             Button(recent.filename) {
-                                openRecentSlideshow(url: recent.url)
+                                openRecentSlideshow(recent: recent)
                             }
                             .disabled(!recent.fileExists)
                         }
@@ -929,20 +929,29 @@ struct ContentView: View {
     // MARK: - Save/Open
 
     /// Opens a recent slideshow from the recents menu
-    private func openRecentSlideshow(url: URL) {
+    private func openRecentSlideshow(recent: RecentSlideshow) {
+        // Try to resolve the security-scoped bookmark first
+        let accessURL: URL
+        if let resolvedURL = recent.resolveBookmark() {
+            accessURL = resolvedURL
+        } else {
+            // Fallback to stored URL (may fail in sandbox)
+            accessURL = recent.url
+        }
+
         // Check if file exists
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            missingFilename = url.deletingPathExtension().lastPathComponent
+        guard FileManager.default.fileExists(atPath: accessURL.path) else {
+            missingFilename = accessURL.deletingPathExtension().lastPathComponent
             showMissingFileAlert = true
             return
         }
 
         // If we have existing photos, show warning dialog
         if !slideshowState.isEmpty {
-            pendingOpenURL = url
+            pendingOpenURL = accessURL
             showOpenWarning = true
         } else {
-            loadSlideshow(from: url)
+            loadSlideshow(from: accessURL)
         }
     }
 

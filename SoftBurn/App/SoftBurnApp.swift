@@ -55,7 +55,7 @@ struct SoftBurnApp: App {
                 Menu {
                     ForEach(recentsManager.recentSlideshows) { recent in
                         Button(action: {
-                            NotificationCenter.default.post(name: .openRecentSlideshow, object: recent.url)
+                            NotificationCenter.default.post(name: .openRecentSlideshow, object: recent)
                         }) {
                             Text(recent.filename)
                         }
