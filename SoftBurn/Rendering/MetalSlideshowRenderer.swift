@@ -916,7 +916,8 @@ final class MetalSlideshowRenderer {
         var dustRate: Float
         var dustIntensity: Float
         var dustSize: Float
-        var _pad0: SIMD2<Float> = .zero
+        var projectorSpeed: Float  // Simulated fps (0 = disabled, 18 = classic film)
+        var _pad0: Float = 0
     }
 
     private struct PatinaParamsVHS {
@@ -1000,7 +1001,8 @@ final class MetalSlideshowRenderer {
             vignetteRadius: tuning.aged.vignetteRadius,
             dustRate: tuning.aged.dustRate,
             dustIntensity: tuning.aged.dustIntensity,
-            dustSize: tuning.aged.dustSize
+            dustSize: tuning.aged.dustSize,
+            projectorSpeed: tuning.aged.projectorSpeed
         )
 
         let vhs = PatinaParamsVHS(

@@ -58,7 +58,8 @@ struct PatinaParamsAgedFilm {
     float dustRate;
     float dustIntensity;
     float dustSize;
-    float2 _pad0;
+    float projectorSpeed;  // Simulated fps (0 = disabled, 18 = classic film)
+    float _pad0;
 };
 
 struct PatinaParamsVHS {
@@ -159,6 +160,12 @@ float filmGrain(float2 uv, float time, float fineness, float seed) {
     return hash12(grainUV) * 2.0 - 1.0;
 }
 
+// Quantize time to simulate lower projector framerate (e.g., 18fps for old film)
+// Returns quantized time if fps > 0, otherwise returns original time
+float quantizeTime(float t, float fps) {
+    return fps > 0.0 ? floor(t * fps) / fps : t;
+}
+
 // MARK: - Sampling / Tonemapping Helpers
 
 static inline float3 sampleRGB(texture2d<float> tex, sampler s, float2 uv) {
@@ -234,41 +241,48 @@ float3 apply35mm(texture2d<float> tex, sampler s, float2 uv, float time, float2 
 
 // Slightly coarser grain, subtle brightness drift
 float3 applyAgedFilm(texture2d<float> tex, sampler s, float2 uv, float time, float2 resolution, float seed, constant PatinaParamsAgedFilm& p) {
+    // Quantize time to simulate choppy projector framerate (e.g., 18fps)
+    // When projectorSpeed is 0, qTime equals time (smooth behavior)
+    float qTime = quantizeTime(time, p.projectorSpeed);
+
     // Coarser grain than 35mm
     // Tiny frame instability / jitter (projector weave). Kept very small.
+    // Uses quantized time so jitter "jumps" between positions at simulated fps
     float2 texel = 1.0 / resolution;
-    float jx = (valueNoise(float2(time * 0.35, seed + 11.0)) - 0.5) * texel.x * p.jitterAmplitudeTexels;
-    float jy = (valueNoise(float2(time * 0.28, seed + 37.0)) - 0.5) * texel.y * p.jitterAmplitudeTexels;
+    float jx = (valueNoise(float2(qTime * 0.35, seed + 11.0)) - 0.5) * texel.x * p.jitterAmplitudeTexels;
+    float jy = (valueNoise(float2(qTime * 0.28, seed + 37.0)) - 0.5) * texel.y * p.jitterAmplitudeTexels;
     uv = saturate(uv + float2(jx, jy));
 
     // Slight blur/softness.
     float3 base = softBlur5(tex, s, uv, texel, p.blurRadiusTexels);
 
-    float grain = filmGrain(uv, time, p.grainFineness, seed);
-    
-    // Irregular grain variation
-    float grainMod = valueNoise(uv * 200.0 + time * 5.0);
+    float grain = filmGrain(uv, qTime, p.grainFineness, seed);
+
+    // Irregular grain variation (uses quantized time for discrete grain refresh)
+    float grainMod = valueNoise(uv * 200.0 + qTime * 5.0);
     grain *= 0.7 + grainMod * 0.6;
-    
+
     // Moderate grain intensity
     float3 result = base + grain * p.grainIntensity;
-    
+
     // Very subtle brightness drift over time (slow sine wave)
     // Gentle drift + irregular dim pulses with occasional flashes
-    float brightnessDrift = sin(time * p.driftSpeed) * p.driftIntensity;
+    // Uses quantized time for discrete stepping effect
+    float brightnessDrift = sin(qTime * p.driftSpeed) * p.driftIntensity;
 
     // Irregular dimPulse: combine multiple noise frequencies for non-uniform breathing
-    float slowPulse = valueNoise(float2(time * p.dimPulseSpeed * 0.3, seed));
-    float mediumPulse = valueNoise(float2(time * p.dimPulseSpeed * 0.8, seed + 17.3));
-    float fastPulse = valueNoise(float2(time * p.dimPulseSpeed * 2.1, seed + 42.7));
+    // Uses quantized time so pulses update at simulated projector fps
+    float slowPulse = valueNoise(float2(qTime * p.dimPulseSpeed * 0.3, seed));
+    float mediumPulse = valueNoise(float2(qTime * p.dimPulseSpeed * 0.8, seed + 17.3));
+    float fastPulse = valueNoise(float2(qTime * p.dimPulseSpeed * 2.1, seed + 42.7));
 
     // Combine octaves with different weights for irregular pattern
     float irregularNoise = slowPulse * 0.5 + mediumPulse * 0.3 + fastPulse * 0.2;
 
     // Occasional sharp flashes: use a separate high-threshold gate
-    float flashGate = hash12(float2(floor(time * p.dimPulseSpeed * 1.3), seed + 88.4));
+    float flashGate = hash12(float2(floor(qTime * p.dimPulseSpeed * 1.3), seed + 88.4));
     float flashTrigger = step(0.97, flashGate); // Flash happens ~3% of the time
-    float flashIntensity = hash12(float2(time * 100.0, seed + 123.0)) * 0.5 + 0.5; // 0.5 to 1.0
+    float flashIntensity = hash12(float2(qTime * 100.0, seed + 123.0)) * 0.5 + 0.5; // 0.5 to 1.0
     float flashValue = flashTrigger * flashIntensity * abs(p.dimPulseIntensity) * 3.0; // Stronger flash
 
     // Base dim pulse (can be negative for dimming or positive for brightening)

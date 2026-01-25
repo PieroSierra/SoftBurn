@@ -108,6 +108,9 @@ struct PatinaAgedFilmTuning: Codable {
     var dustIntensity: Float = 0.133389    // 0..0.6
     var dustSize: Float = 18.8924          // 1..20 (larger = thicker/more varied dust lines)
 
+    // Projector speed (simulated fps for choppy effect)
+    var projectorSpeed: Float = 0.0        // 0..30 (0 = disabled, 18 = classic film)
+
     static let ranges: [String: PatinaRange] = [
         "grainFineness": .init(min: 250, max: 1000, step: 1),
         "grainIntensity": .init(min: 0.00, max: 0.12, step: 0.001),
@@ -127,6 +130,7 @@ struct PatinaAgedFilmTuning: Codable {
         "dustRate": .init(min: 0.0, max: 0.01, step: 0.0001),
         "dustIntensity": .init(min: 0.00, max: 0.60, step: 0.01),
         "dustSize": .init(min: 1.0, max: 20.0, step: 0.1),
+        "projectorSpeed": .init(min: 0.0, max: 30.0, step: 1.0),
     ]
 }
 

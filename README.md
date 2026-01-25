@@ -117,9 +117,9 @@ See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
 - [x] Single image preview
 - [x] Image rotation
 - [x] Enable Metal render pipeline.
-  - [ ] Pre-load next video for performance
-  - [ ] Unify Render pipelines (when 100% done)
-  - [ ] Export to Video (only when unified)
+  - [x] Pre-load next video for performance
+  - [x] Unify Render pipelines (when 100% done)
+  - [x] Export to Video (only when unified)
 - [x] Basic Multi-monitor support
   - [ ] Project on **all** monitors 
 - [x] Photo App support
@@ -127,6 +127,7 @@ See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
   - [x] Improve tearing
   - [x] Increase chromatic abberration
   - [x] Add brightness flashing to Aged Film
+- [ ] Add Wes Anderson filter
 - [ ] Photo Album style (multi-photos dynamic templates)
 - [ ] Localisation
 

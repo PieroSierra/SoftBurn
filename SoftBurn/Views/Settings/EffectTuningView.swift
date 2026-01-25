@@ -107,7 +107,8 @@ private func dump(_ v: PatinaAgedFilmTuning) -> String {
         vignetteRadius: \(fmt(v.vignetteRadius)),
         dustRate: \(fmt(v.dustRate)),
         dustIntensity: \(fmt(v.dustIntensity)),
-        dustSize: \(fmt(v.dustSize))
+        dustSize: \(fmt(v.dustSize)),
+        projectorSpeed: \(fmt(v.projectorSpeed))
     )
     """
 }
@@ -241,6 +242,10 @@ private struct PatinaAgedFilmTuningTab: View {
                     SliderRow(title: "dustRate", value: $aged.dustRate, range: PatinaAgedFilmTuning.ranges["dustRate"]!)
                     SliderRow(title: "dustIntensity", value: $aged.dustIntensity, range: PatinaAgedFilmTuning.ranges["dustIntensity"]!)
                     SliderRow(title: "dustSize", value: $aged.dustSize, range: PatinaAgedFilmTuning.ranges["dustSize"]!)
+                }
+
+                GroupBox("Projector") {
+                    SliderRow(title: "projectorSpeed", value: $aged.projectorSpeed, range: PatinaAgedFilmTuning.ranges["projectorSpeed"]!)
                 }
             }
         }
