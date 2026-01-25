@@ -253,6 +253,20 @@ float3 applyAgedFilm(texture2d<float> tex, sampler s, float2 uv, float time, flo
     float jy = (valueNoise(float2(qTime * 0.28, seed + 37.0)) - 0.5) * texel.y * p.jitterAmplitudeTexels;
     uv = saturate(uv + float2(jx, jy));
 
+    // Film gate shake: random offset shifts that make the frame "shaky"
+    // Only active when projectorSpeed > 0; intensity scales with projector speed
+    if (p.projectorSpeed > 0.0) {
+        // Use frame number for discrete random jumps (changes each "frame")
+        float frameNum = floor(qTime * p.projectorSpeed);
+        // Random offsets centered around 0 (-0.5 to 0.5, then scaled)
+        float shakeX = (hash12(float2(frameNum, seed + 201.7)) - 0.5);
+        float shakeY = (hash12(float2(frameNum, seed + 307.3)) - 0.5);
+        // Scale: higher projector speed = more subtle shake (feels more stable)
+        // Base shake of ~3 texels at 18fps, scaling down at higher fps
+        float shakeScale = 3.0 * (18.0 / max(12.0, p.projectorSpeed));
+        uv = saturate(uv + float2(shakeX, shakeY) * texel * shakeScale);
+    }
+
     // Slight blur/softness.
     float3 base = softBlur5(tex, s, uv, texel, p.blurRadiusTexels);
 
