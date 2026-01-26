@@ -40,6 +40,161 @@ static inline float luminance(float3 c) {
     return dot(c, float3(0.299, 0.587, 0.114));
 }
 
+// MARK: - Wes Palette Helpers
+
+/// Convert RGB to Hue (0-1 range, where 1.0 = 360°)
+static inline float rgbToHue(float3 rgb) {
+    float maxC = max(rgb.r, max(rgb.g, rgb.b));
+    float minC = min(rgb.r, min(rgb.g, rgb.b));
+    float delta = maxC - minC;
+    if (delta < 0.001) return 0.0;
+
+    float hue;
+    if (maxC == rgb.r) hue = (rgb.g - rgb.b) / delta;
+    else if (maxC == rgb.g) hue = 2.0 + (rgb.b - rgb.r) / delta;
+    else hue = 4.0 + (rgb.r - rgb.g) / delta;
+
+    return fract(hue / 6.0);  // Normalize to 0-1
+}
+
+/// Detect skin tones and return protection factor (0-1, higher = more protection)
+/// Skin tones fall in hue range ~15°-45° (orange-yellow) with moderate saturation
+static inline float skinToneProtection(float3 rgb) {
+    float hue = rgbToHue(rgb) * 360.0;  // Convert to degrees
+
+    // Skin tones: ~15° to ~45° with smooth falloff
+    float skinMask = smoothstep(10.0, 20.0, hue) * (1.0 - smoothstep(40.0, 50.0, hue));
+
+    // Require minimum saturation - very desaturated pixels aren't skin
+    float maxC = max(rgb.r, max(rgb.g, rgb.b));
+    float minC = min(rgb.r, min(rgb.g, rgb.b));
+    float sat = (maxC > 0.001) ? (maxC - minC) / maxC : 0.0;
+    float satMask = smoothstep(0.15, 0.3, sat);
+
+    return skinMask * satMask;
+}
+
+/// Adjust contrast around midpoint (negative = softer, positive = punchier)
+static inline float3 adjustContrast(float3 rgb, float amount) {
+    float3 mid = float3(0.5);
+    return saturate(mid + (rgb - mid) * (1.0 + amount));
+}
+
+/// Adjust saturation (0 = grayscale, 1 = original, >1 = oversaturated)
+static inline float3 adjustSaturation(float3 rgb, float amount) {
+    float y = luminance(rgb);
+    return saturate(mix(float3(y), rgb, amount));
+}
+
+// MARK: - Wes Color Palettes
+
+/// Budapest Rose: warm pastel, rose-tinted midtones, purple shadows
+static inline float3 applyBudapestRose(float3 rgb) {
+    // Palette colors (normalized RGB)
+    float3 dominant = float3(1.000, 0.847, 0.925);   // Rose #FFD8EC
+    float3 shadow = float3(0.471, 0.259, 0.514);     // Purple #784283
+    float3 highlight = float3(0.867, 0.839, 0.565);  // Cream #DDD690
+    float3 accentRed = float3(0.898, 0.000, 0.047);  // Accent #E5000C
+
+    float y = luminance(rgb);
+    float protection = skinToneProtection(rgb);
+    float strength = mix(0.75, 0.225, protection);  // 75% base strength, 22.5% on skin
+
+    // Zone weights with soft transitions (reduced 25%)
+    float shadowW = (1.0 - smoothstep(0.0, 0.4, y)) * 0.3;
+    float midW = smoothstep(0.2, 0.4, y) * (1.0 - smoothstep(0.6, 0.8, y)) * 0.375;
+    float highW = smoothstep(0.6, 0.9, y) * 0.225;
+
+    // Bias reds toward accent red
+    float redBias = smoothstep(0.3, 0.6, rgb.r) * (1.0 - smoothstep(0.2, 0.5, rgb.g));
+
+    float3 graded = rgb;
+    graded = mix(graded, shadow * (y + 0.3), shadowW * strength);
+    graded = mix(graded, dominant, midW * strength);
+    graded = mix(graded, highlight, highW * strength);
+    graded = mix(graded, accentRed * (rgb.r + 0.2), redBias * strength * 0.225);
+
+    // Reduce saturation to ~81% (was 75%, now 25% less reduction)
+    graded = adjustSaturation(graded, 0.8125);
+    graded = adjustContrast(graded, -0.075);
+
+    return saturate(graded);
+}
+
+/// Fantastic Mr Yellow: warm autumnal, yellow-dominant, fox-red accents
+static inline float3 applyFantasticMrYellow(float3 rgb) {
+    // Palette colors
+    float3 dominant = float3(1.000, 0.788, 0.027);   // Yellow #FFC907
+    float3 foxRed = float3(0.776, 0.125, 0.153);     // Fox Red #C62027
+    float3 shadow = float3(0.765, 0.439, 0.129);     // Autumn Brown #C37021
+    float3 highlight = float3(0.949, 0.875, 0.816);  // Paper Cream #F2DFD0
+
+    float y = luminance(rgb);
+    float protection = skinToneProtection(rgb);
+    float strength = mix(0.75, 0.225, protection);  // 75% base strength
+
+    // Zone weights (reduced 25%)
+    float shadowW = (1.0 - smoothstep(0.0, 0.4, y)) * 0.2625;
+    float midW = smoothstep(0.2, 0.4, y) * (1.0 - smoothstep(0.6, 0.8, y)) * 0.375;
+    float highW = smoothstep(0.6, 0.9, y) * 0.1875;
+
+    // Bias yellows toward dominant, reds toward fox red
+    float yellowBias = smoothstep(0.4, 0.7, rgb.r) * smoothstep(0.3, 0.6, rgb.g) * (1.0 - smoothstep(0.2, 0.4, rgb.b));
+    float redBias = smoothstep(0.4, 0.7, rgb.r) * (1.0 - smoothstep(0.2, 0.4, rgb.g));
+
+    // De-emphasize greens (avoid neon look)
+    float greenSuppress = smoothstep(0.3, 0.6, rgb.g) * (1.0 - smoothstep(0.2, 0.5, rgb.r));
+
+    float3 graded = rgb;
+    graded = mix(graded, shadow * (y + 0.4), shadowW * strength);
+    graded = mix(graded, dominant, midW * strength);
+    graded = mix(graded, highlight, highW * strength);
+    graded = mix(graded, dominant, yellowBias * strength * 0.3);
+    graded = mix(graded, foxRed * (rgb.r + 0.3), redBias * strength * 0.2625);
+
+    // Suppress neon greens (reduced effect)
+    graded.g = mix(graded.g, graded.g * 0.8875, greenSuppress * strength);
+
+    return saturate(graded);
+}
+
+/// Darjeeling Mint: cool composed, mint-green pulls, warm shadows
+static inline float3 applyDarjeelingMint(float3 rgb) {
+    // Palette colors
+    float3 dominant = float3(0.286, 0.600, 0.486);   // Mint #49997C
+    float3 railwayBlue = float3(0.008, 0.478, 0.690);// Blue #027AB0
+    float3 shadow = float3(0.682, 0.224, 0.094);     // Spice Red #AE3918 (warm)
+    float3 highlight = float3(0.820, 0.612, 0.184);  // Dusty Gold #D19C2F
+
+    float y = luminance(rgb);
+    float protection = skinToneProtection(rgb);
+    float strength = mix(0.75, 0.225, protection);  // 75% base strength
+
+    // Zone weights - cool highlights, warm shadows (reduced 25%)
+    float shadowW = (1.0 - smoothstep(0.0, 0.4, y)) * 0.225;
+    float midW = smoothstep(0.2, 0.4, y) * (1.0 - smoothstep(0.6, 0.8, y)) * 0.3375;
+    float highW = smoothstep(0.6, 0.9, y) * 0.1875;
+
+    // Bias greens/cyans toward mint, blues toward railway blue
+    float greenCyanBias = smoothstep(0.3, 0.6, rgb.g) * (1.0 - smoothstep(0.3, 0.6, rgb.r));
+    float blueBias = smoothstep(0.3, 0.6, rgb.b) * (1.0 - smoothstep(0.3, 0.5, rgb.r));
+
+    float3 graded = rgb;
+    graded = mix(graded, shadow * (y + 0.5), shadowW * strength);  // Warm shadows
+    graded = mix(graded, dominant, midW * strength);
+    graded = mix(graded, highlight * 0.9 + float3(0.0, 0.05, 0.1), highW * strength);  // Cool highlights
+    graded = mix(graded, dominant, greenCyanBias * strength * 0.3);
+    graded = mix(graded, railwayBlue * (rgb.b + 0.3), blueBias * strength * 0.1875);
+
+    // Mild S-curve contrast (reduced effect by blending with original)
+    float3 curved = smoothstep(-0.05, 1.05, graded);
+    graded = mix(graded, curved, 0.75);
+
+    return saturate(graded);
+}
+
+// MARK: - Effect Dispatcher
+
 static inline float3 applyEffect(float3 rgb, int mode) {
     switch (mode) {
         case 1: { // monochrome
@@ -57,6 +212,9 @@ static inline float3 applyEffect(float3 rgb, int mode) {
             float3 g = float3(y);
             return saturate(g * float3(1.0, 0.92, 0.78));
         }
+        case 4: return applyBudapestRose(rgb);       // Budapest Rose
+        case 5: return applyFantasticMrYellow(rgb);  // Fantastic Mr Yellow
+        case 6: return applyDarjeelingMint(rgb);     // Darjeeling Mint
         default:
             return rgb;
     }

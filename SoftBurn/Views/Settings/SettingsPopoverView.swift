@@ -373,6 +373,10 @@ struct BackgroundColorPickerView: View {
         ("White", .white),
         ("Navy", Color(red: 0.1, green: 0.1, blue: 0.3)),
         ("Dark Brown", Color(red: 0.2, green: 0.15, blue: 0.1)),
+        // Wes palette matching backgrounds
+        ("Warm Cream", Color(red: 221/255, green: 214/255, blue: 144/255)),
+        ("Paper Cream", Color(red: 242/255, green: 223/255, blue: 208/255)),
+        ("Dusty Gold", Color(red: 209/255, green: 156/255, blue: 47/255)),
     ]
     
     var body: some View {
