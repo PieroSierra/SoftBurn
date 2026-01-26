@@ -117,12 +117,12 @@ struct SlideshowDocument: Codable {
             var displayName: String {
                 switch self {
                 case .none: return "None"
-                case .monochrome: return "Monochrome"
-                case .silvertone: return "Silvertone"
-                case .sepia: return "Sepia"
-                case .budapestRose: return "Budapest Rose"
-                case .fantasticMrYellow: return "Fantastic Mr Yellow"
-                case .darjeelingMint: return "Darjeeling Mint"
+                case .monochrome: return "◐ Monochrome"
+                case .silvertone: return "🆂 Silvertone"
+                case .sepia: return "☁︎ Sepia"
+                case .budapestRose: return "♥︎ Budapest Rose"
+                case .fantasticMrYellow: return "☀︎ Fantastic Mr Yellow"
+                case .darjeelingMint: return "☾ Darjeeling Mint"
                 }
             }
         }

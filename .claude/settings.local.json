@@ -31,7 +31,9 @@
       "Bash(swift -parse:*)",
       "Bash(swiftc -parse:*)",
       "Bash(sudo xcode-select:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(git stash:*)"
     ]
   }
 }
