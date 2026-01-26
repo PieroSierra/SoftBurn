@@ -30,7 +30,8 @@
       "Bash(.specify/scripts/bash/create-new-feature.sh:*)",
       "Bash(swift -parse:*)",
       "Bash(swiftc -parse:*)",
-      "Bash(sudo xcode-select:*)"
+      "Bash(sudo xcode-select:*)",
+      "Bash(git branch:*)"
     ]
   }
 }

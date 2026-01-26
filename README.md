@@ -31,7 +31,7 @@ It can also export slideshows as full HD videos.
 SoftBurn focuses on native macOS development:
 
 - **Swift 6 Concurrency** - Strict actor isolation with background processing for heavy operations
-- **SwiftUI + Metal 3** - Hybrid rendering strategy: SwiftUI for simple transitions, Metal for advanced effects
+- **Metal 3 pipeline** - full screen dual-Metal pipeline for advanced effects
 - **Vision Framework** - Face detection zoom automatically centers on subjects
 - **Zero Dependencies** - Pure Apple frameworks (no external packages)
 - **Sandboxed & Secure** - Security-scoped bookmarks enable cross-session file access
@@ -43,8 +43,7 @@ UI Layer (SwiftUI)
   ↓
 State Management (@MainActor)
   ↓
-Conditional Rendering Path:
-  • SwiftUI Path → Direct transitions + CPU effects
+Tendering Path:
   • Metal Path → Two-pass GPU pipeline (scene + patina)
   ↓
 Background Actors (Face Detection, Thumbnails, Caching)
@@ -89,10 +88,10 @@ SoftBurn uses a feature-based folder organization:
 
 ```
 SoftBurn/
-├── App/                    # Application lifecycle and entry point
-├── Models/                 # Core data models (MediaItem, SlideshowDocument)
-├── State/                  # State management (@MainActor observables)
-├── Views/                  # SwiftUI/AppKit views organized by feature
+├── App/                   # Application lifecycle and entry point
+├── Models/                # Core data models (MediaItem, SlideshowDocument)
+├── State/                 # State management (@MainActor observables)
+├── Views/                 # SwiftUI/AppKit views organized by feature
 │   ├── Main/              # Root app UI
 │   ├── Grid/              # Photo grid and thumbnails
 │   ├── Slideshow/         # Playback views

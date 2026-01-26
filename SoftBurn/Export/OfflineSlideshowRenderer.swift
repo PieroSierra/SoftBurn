@@ -461,6 +461,9 @@ final class OfflineSlideshowRenderer {
             case .monochrome: return 1
             case .silvertone: return 2
             case .sepia: return 3
+            case .budapestRose: return 4
+            case .fantasticMrYellow: return 5
+            case .darjeelingMint: return 6
             }
         }()
 
