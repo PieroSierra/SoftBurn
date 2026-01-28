@@ -98,12 +98,12 @@ static inline float3 applyBudapestRose(float3 rgb) {
 
     float y = luminance(rgb);
     float protection = skinToneProtection(rgb);
-    float strength = mix(0.75, 0.225, protection);  // 75% base strength, 22.5% on skin
+    float strength = mix(0.65, 0.15, protection);  // 65% base strength, 15% on skin
 
-    // Zone weights with soft transitions (reduced 25%)
-    float shadowW = (1.0 - smoothstep(0.0, 0.4, y)) * 0.3;
-    float midW = smoothstep(0.2, 0.4, y) * (1.0 - smoothstep(0.6, 0.8, y)) * 0.375;
-    float highW = smoothstep(0.6, 0.9, y) * 0.225;
+    // Zone weights with soft transitions
+    float shadowW = (1.0 - smoothstep(0.0, 0.4, y)) * 0.26;
+    float midW = smoothstep(0.2, 0.4, y) * (1.0 - smoothstep(0.6, 0.8, y)) * 0.325;
+    float highW = smoothstep(0.6, 0.9, y) * 0.195;
 
     // Bias reds toward accent red
     float redBias = smoothstep(0.3, 0.6, rgb.r) * (1.0 - smoothstep(0.2, 0.5, rgb.g));
@@ -112,11 +112,11 @@ static inline float3 applyBudapestRose(float3 rgb) {
     graded = mix(graded, shadow * (y + 0.3), shadowW * strength);
     graded = mix(graded, dominant, midW * strength);
     graded = mix(graded, highlight, highW * strength);
-    graded = mix(graded, accentRed * (rgb.r + 0.2), redBias * strength * 0.225);
+    graded = mix(graded, accentRed * (rgb.r + 0.2), redBias * strength * 0.195);
 
-    // Reduce saturation to ~81% (was 75%, now 25% less reduction)
-    graded = adjustSaturation(graded, 0.8125);
-    graded = adjustContrast(graded, -0.075);
+    // Reduce saturation to ~84%
+    graded = adjustSaturation(graded, 0.84);
+    graded = adjustContrast(graded, -0.065);
 
     return saturate(graded);
 }
@@ -131,12 +131,12 @@ static inline float3 applyFantasticMrYellow(float3 rgb) {
 
     float y = luminance(rgb);
     float protection = skinToneProtection(rgb);
-    float strength = mix(0.75, 0.225, protection);  // 75% base strength
+    float strength = mix(0.65, 0.15, protection);  // 65% base strength, 15% on skin
 
-    // Zone weights (reduced 25%)
-    float shadowW = (1.0 - smoothstep(0.0, 0.4, y)) * 0.2625;
-    float midW = smoothstep(0.2, 0.4, y) * (1.0 - smoothstep(0.6, 0.8, y)) * 0.375;
-    float highW = smoothstep(0.6, 0.9, y) * 0.1875;
+    // Zone weights
+    float shadowW = (1.0 - smoothstep(0.0, 0.4, y)) * 0.2275;
+    float midW = smoothstep(0.2, 0.4, y) * (1.0 - smoothstep(0.6, 0.8, y)) * 0.325;
+    float highW = smoothstep(0.6, 0.9, y) * 0.1625;
 
     // Bias yellows toward dominant, reds toward fox red
     float yellowBias = smoothstep(0.4, 0.7, rgb.r) * smoothstep(0.3, 0.6, rgb.g) * (1.0 - smoothstep(0.2, 0.4, rgb.b));
@@ -149,11 +149,11 @@ static inline float3 applyFantasticMrYellow(float3 rgb) {
     graded = mix(graded, shadow * (y + 0.4), shadowW * strength);
     graded = mix(graded, dominant, midW * strength);
     graded = mix(graded, highlight, highW * strength);
-    graded = mix(graded, dominant, yellowBias * strength * 0.3);
-    graded = mix(graded, foxRed * (rgb.r + 0.3), redBias * strength * 0.2625);
+    graded = mix(graded, dominant, yellowBias * strength * 0.26);
+    graded = mix(graded, foxRed * (rgb.r + 0.3), redBias * strength * 0.2275);
 
     // Suppress neon greens (reduced effect)
-    graded.g = mix(graded.g, graded.g * 0.8875, greenSuppress * strength);
+    graded.g = mix(graded.g, graded.g * 0.9, greenSuppress * strength);
 
     return saturate(graded);
 }
@@ -168,12 +168,12 @@ static inline float3 applyDarjeelingMint(float3 rgb) {
 
     float y = luminance(rgb);
     float protection = skinToneProtection(rgb);
-    float strength = mix(0.75, 0.225, protection);  // 75% base strength
+    float strength = mix(0.65, 0.15, protection);  // 65% base strength, 15% on skin
 
-    // Zone weights - cool highlights, warm shadows (reduced 25%)
-    float shadowW = (1.0 - smoothstep(0.0, 0.4, y)) * 0.225;
-    float midW = smoothstep(0.2, 0.4, y) * (1.0 - smoothstep(0.6, 0.8, y)) * 0.3375;
-    float highW = smoothstep(0.6, 0.9, y) * 0.1875;
+    // Zone weights - cool highlights, warm shadows
+    float shadowW = (1.0 - smoothstep(0.0, 0.4, y)) * 0.195;
+    float midW = smoothstep(0.2, 0.4, y) * (1.0 - smoothstep(0.6, 0.8, y)) * 0.2925;
+    float highW = smoothstep(0.6, 0.9, y) * 0.1625;
 
     // Bias greens/cyans toward mint, blues toward railway blue
     float greenCyanBias = smoothstep(0.3, 0.6, rgb.g) * (1.0 - smoothstep(0.3, 0.6, rgb.r));
@@ -183,12 +183,12 @@ static inline float3 applyDarjeelingMint(float3 rgb) {
     graded = mix(graded, shadow * (y + 0.5), shadowW * strength);  // Warm shadows
     graded = mix(graded, dominant, midW * strength);
     graded = mix(graded, highlight * 0.9 + float3(0.0, 0.05, 0.1), highW * strength);  // Cool highlights
-    graded = mix(graded, dominant, greenCyanBias * strength * 0.3);
-    graded = mix(graded, railwayBlue * (rgb.b + 0.3), blueBias * strength * 0.1875);
+    graded = mix(graded, dominant, greenCyanBias * strength * 0.26);
+    graded = mix(graded, railwayBlue * (rgb.b + 0.3), blueBias * strength * 0.1625);
 
     // Mild S-curve contrast (reduced effect by blending with original)
     float3 curved = smoothstep(-0.05, 1.05, graded);
-    graded = mix(graded, curved, 0.75);
+    graded = mix(graded, curved, 0.65);
 
     return saturate(graded);
 }

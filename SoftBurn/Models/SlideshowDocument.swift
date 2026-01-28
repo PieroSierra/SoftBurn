@@ -150,9 +150,9 @@ struct SlideshowDocument: Codable {
             case crossFade = "Cross Fade"
             case plain = "Plain"
 
-            /// UI ordering requirement: Pan & Zoom, Zoom, Cross-fade, Plain
+            /// UI ordering: None first for symmetry with other menus, then motion-based transitions
             static var allCases: [TransitionStyle] {
-                [.panAndZoom, .zoom, .crossFade, .plain]
+                [.plain, .zoom, .panAndZoom, .crossFade]
             }
 
             /// Display name (keeps persisted raw values stable for backwards compatibility).
@@ -161,7 +161,7 @@ struct SlideshowDocument: Codable {
                 case .panAndZoom: return "Pan & Zoom"
                 case .zoom: return "Zoom"
                 case .crossFade: return "Cross-fade"
-                case .plain: return "Plain"
+                case .plain: return "None"
                 }
             }
         }
