@@ -10,6 +10,7 @@ import SwiftUI
 
 extension NSPasteboard.PasteboardType {
     static let softburnMediaID = NSPasteboard.PasteboardType("com.softburn.media-id")
+    static let photosLibraryIdentifier = NSPasteboard.PasteboardType("com.apple.photos.pasteboard.identifier")
 }
 
 // MARK: - NSView Snapshot Helper
@@ -51,6 +52,12 @@ struct MediaGridCollectionView: NSViewRepresentable {
     /// External file drop (folders/images/movies).
     let onDropFiles: ([URL]) -> Void
 
+    /// Photos Library drop (dragged from Photos.app).
+    let onDropPhotosLibraryItems: ([MediaItem]) -> Void
+
+    /// Called when Photos drop fails due to authorization denial.
+    let onPhotosDropAuthorizationDenied: () -> Void
+
     /// Local reorder (Photos.app-style insertion gap).
     let onReorderToIndex: ([UUID], Int) -> Void
 
@@ -71,6 +78,12 @@ struct MediaGridCollectionView: NSViewRepresentable {
 
         container.onPerformExternalDrop = { urls in
             self.onDropFiles(urls)
+        }
+        container.onDropPhotosLibraryItems = { items in
+            self.onDropPhotosLibraryItems(items)
+        }
+        container.onPhotosDropAuthorizationDenied = {
+            self.onPhotosDropAuthorizationDenied()
         }
 
         // Wire up zoom level change callback for pinch gestures
@@ -163,7 +176,7 @@ struct MediaGridCollectionView: NSViewRepresentable {
 
             // Drag and drop (reorder)
             collectionView.setDraggingSourceOperationMask(.move, forLocal: true)
-            collectionView.registerForDraggedTypes([.softburnMediaID, .fileURL])
+            collectionView.registerForDraggedTypes([.softburnMediaID, .photosLibraryIdentifier, .fileURL])
         }
 
         func apply(photos: [MediaItem], to collectionView: MediaCollectionView, animatingDifferences: Bool = true) {
@@ -416,6 +429,13 @@ struct MediaGridCollectionView: NSViewRepresentable {
         func collectionView(_ collectionView: NSCollectionView, validateDrop draggingInfo: NSDraggingInfo, proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>, dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>) -> NSDragOperation {
             let pb = draggingInfo.draggingPasteboard
 
+            // Photos Library drops (from Photos.app) - check BEFORE .fileURL since Photos provides both
+            if pb.types?.contains(.photosLibraryIdentifier) == true,
+               (draggingInfo.draggingSource as? NSCollectionView) !== collectionView {
+                proposedDropOperation.pointee = .on
+                return .copy
+            }
+
             // External file drops (folders/images/movies).
             if pb.types?.contains(.fileURL) == true,
                (draggingInfo.draggingSource as? NSCollectionView) !== collectionView {
@@ -450,6 +470,25 @@ struct MediaGridCollectionView: NSViewRepresentable {
 
         func collectionView(_ collectionView: NSCollectionView, acceptDrop draggingInfo: NSDraggingInfo, indexPath: IndexPath, dropOperation: NSCollectionView.DropOperation) -> Bool {
             let pb = draggingInfo.draggingPasteboard
+
+            // Photos Library drop (from Photos.app) - check BEFORE .fileURL since Photos provides both
+            if pb.types?.contains(.photosLibraryIdentifier) == true,
+               (draggingInfo.draggingSource as? NSCollectionView) !== collectionView {
+                Task { @MainActor in
+                    let result = await PhotosLibraryDropHandler.handleDrop(pasteboard: pb)
+                    switch result {
+                    case .photosLibraryItems(let items):
+                        if !items.isEmpty {
+                            self.parent.onDropPhotosLibraryItems(items)
+                        }
+                    case .authorizationDenied:
+                        self.parent.onPhotosDropAuthorizationDenied()
+                    case .notPhotosLibraryDrop:
+                        break
+                    }
+                }
+                return true
+            }
 
             // External file drop
             if pb.types?.contains(.fileURL) == true,
@@ -557,6 +596,8 @@ final class MediaGridContainerView: NSView {
     }
 
     var onPerformExternalDrop: (([URL]) -> Void)?
+    var onDropPhotosLibraryItems: (([MediaItem]) -> Void)?
+    var onPhotosDropAuthorizationDenied: (() -> Void)?
 
     func configure() {
         wantsLayer = true
@@ -570,7 +611,7 @@ final class MediaGridContainerView: NSView {
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
-        scrollView.registerForDraggedTypes([.fileURL])
+        scrollView.registerForDraggedTypes([.photosLibraryIdentifier, .fileURL])
 
         updateContentInsets()
 
@@ -601,6 +642,12 @@ final class MediaGridContainerView: NSView {
 
         scrollView.onPerformExternalDrop = { [weak self] urls in
             self?.onPerformExternalDrop?(urls)
+        }
+        scrollView.onDropPhotosLibraryItems = { [weak self] items in
+            self?.onDropPhotosLibraryItems?(items)
+        }
+        scrollView.onPhotosDropAuthorizationDenied = { [weak self] in
+            self?.onPhotosDropAuthorizationDenied?()
         }
 
         // Wire up magnification gesture for pinch-to-zoom
@@ -806,11 +853,17 @@ final class MediaGridContainerView: NSView {
 @MainActor
 final class MediaGridScrollView: NSScrollView {
     var onPerformExternalDrop: (([URL]) -> Void)?
+    var onDropPhotosLibraryItems: (([MediaItem]) -> Void)?
+    var onPhotosDropAuthorizationDenied: (() -> Void)?
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         let pb = sender.draggingPasteboard
         if pb.types?.contains(.softburnMediaID) == true {
             return []
+        }
+        // Photos Library drops - check BEFORE .fileURL since Photos provides both
+        if pb.types?.contains(.photosLibraryIdentifier) == true {
+            return .copy
         }
         if pb.types?.contains(.fileURL) == true {
             return .copy
@@ -823,6 +876,25 @@ final class MediaGridScrollView: NSScrollView {
         if pb.types?.contains(.softburnMediaID) == true {
             return false
         }
+
+        // Photos Library drop - check BEFORE .fileURL since Photos provides both
+        if pb.types?.contains(.photosLibraryIdentifier) == true {
+            Task { @MainActor in
+                let result = await PhotosLibraryDropHandler.handleDrop(pasteboard: pb)
+                switch result {
+                case .photosLibraryItems(let items):
+                    if !items.isEmpty {
+                        self.onDropPhotosLibraryItems?(items)
+                    }
+                case .authorizationDenied:
+                    self.onPhotosDropAuthorizationDenied?()
+                case .notPhotosLibraryDrop:
+                    break
+                }
+            }
+            return true
+        }
+
         guard let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
               !urls.isEmpty else {
             return false

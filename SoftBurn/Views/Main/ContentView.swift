@@ -76,6 +76,7 @@ struct ContentView: View {
     @State private var exportProgress = ExportProgress()
     @State private var showMissingFileAlert = false
     @State private var missingFilename: String = ""
+    @State private var showPhotosDropAuthDeniedAlert = false
 
     /// Height of our custom toolbar (used for content inset on older macOS).
     private let customToolbarHeight: CGFloat = 44
@@ -434,6 +435,17 @@ struct ContentView: View {
         } message: {
             Text("The slideshow \"\(missingFilename)\" could not be found. It may have been moved or deleted.")
         }
+        // Photos Library authorization denied alert
+        .alert("Photos Library Access Required", isPresented: $showPhotosDropAuthDeniedAlert) {
+            Button("Open Settings") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Photos") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("SoftBurn needs access to your Photos Library to import photos from Photos.app. You can grant access in System Settings > Privacy & Security > Photos.")
+        }
         // CMD+A to select all
         .background(
             Button("") {
@@ -623,11 +635,19 @@ struct ContentView: View {
         }()
         
         if slideshowState.isEmpty {
-            EmptyStateView { urls in
-                Task {
-                    await importPhotos(from: urls)
+            EmptyStateView(
+                onDrop: { urls in
+                    Task {
+                        await importPhotos(from: urls)
+                    }
+                },
+                onDropPhotosLibraryItems: { items in
+                    handlePhotosLibraryDrop(items)
+                },
+                onPhotosDropAuthorizationDenied: {
+                    showPhotosDropAuthDeniedAlert = true
                 }
-            }
+            )
         } else {
             PhotoGridView(
                 photos: slideshowState.photos,
@@ -652,6 +672,12 @@ struct ContentView: View {
                     Task {
                         await importPhotos(from: urls)
                     }
+                },
+                onDropPhotosLibraryItems: { items in
+                    handlePhotosLibraryDrop(items)
+                },
+                onPhotosDropAuthorizationDenied: {
+                    showPhotosDropAuthDeniedAlert = true
                 },
                 onReorderToIndex: { sourceIDs, destinationIndex in
                     slideshowState.movePhotos(withIDs: sourceIDs, toIndex: destinationIndex)
@@ -1024,6 +1050,18 @@ struct ContentView: View {
         // Face detection prefetch for Photos Library items
         Task.detached(priority: .utility) {
             await FaceDetectionCache.shared.prefetch(items: mediaItems)
+        }
+    }
+
+    /// Handle drag-and-drop from Photos.app.
+    @MainActor
+    private func handlePhotosLibraryDrop(_ items: [MediaItem]) {
+        slideshowState.addPhotos(items)
+        session.markDirty()
+
+        // Face detection prefetch for dropped Photos Library items
+        Task.detached(priority: .utility) {
+            await FaceDetectionCache.shared.prefetch(items: items)
         }
     }
 
