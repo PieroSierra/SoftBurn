@@ -10,7 +10,7 @@ import SwiftUI
 
 extension NSPasteboard.PasteboardType {
     static let softburnMediaID = NSPasteboard.PasteboardType("com.softburn.media-id")
-    static let photosLibraryIdentifier = NSPasteboard.PasteboardType("com.apple.photos.pasteboard.identifier")
+    static let photosLibraryIdentifier = NSPasteboard.PasteboardType("com.apple.photos.object-reference.asset")
 }
 
 // MARK: - NSView Snapshot Helper

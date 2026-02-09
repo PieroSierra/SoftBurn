@@ -10,8 +10,8 @@ import Photos
 
 @MainActor
 final class PhotosLibraryDropHandler {
-    /// The pasteboard type used by Photos.app for dragging asset identifiers.
-    static let photosPasteboardType = NSPasteboard.PasteboardType("com.apple.photos.pasteboard.identifier")
+    /// The pasteboard type used by Photos.app for dragging asset references.
+    static let photosPasteboardType = NSPasteboard.PasteboardType("com.apple.photos.object-reference.asset")
 
     /// Result of processing a Photos Library drop.
     enum DropResult {
@@ -56,24 +56,37 @@ final class PhotosLibraryDropHandler {
     // MARK: - Private Helpers
 
     /// Extract local identifiers from the Photos pasteboard data.
+    /// Photos.app creates one pasteboard item per dragged photo, so we need to iterate all items.
     private static func extractIdentifiers(from pasteboard: NSPasteboard) -> [String]? {
-        guard let data = pasteboard.data(forType: photosPasteboardType) else {
+        guard let items = pasteboard.pasteboardItems, !items.isEmpty else {
+            print("[PhotosLibraryDropHandler] No pasteboard items")
             return nil
         }
 
-        // Photos.app writes identifiers as a property list (array of strings)
-        guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) else {
-            return nil
+        print("[PhotosLibraryDropHandler] Processing \(items.count) pasteboard items")
+
+        var identifiers: [String] = []
+
+        for (index, item) in items.enumerated() {
+            guard let data = item.data(forType: photosPasteboardType) else {
+                continue
+            }
+
+            // Parse the plist data for this item
+            guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+                  let dict = plist as? [String: Any] else {
+                continue
+            }
+
+            // Extract localIdentifier from the dictionary
+            if let localId = dict["localIdentifier"] as? String {
+                identifiers.append(localId)
+                print("[PhotosLibraryDropHandler] Item \(index): localIdentifier = \(localId)")
+            }
         }
 
-        // Handle both array of strings and array of dictionaries with "identifier" key
-        if let identifiers = plist as? [String] {
-            return identifiers
-        } else if let dicts = plist as? [[String: Any]] {
-            return dicts.compactMap { $0["identifier"] as? String }
-        }
-
-        return nil
+        print("[PhotosLibraryDropHandler] Extracted \(identifiers.count) identifiers")
+        return identifiers.isEmpty ? nil : identifiers
     }
 
     /// Fetch PHAssets for the given local identifiers.

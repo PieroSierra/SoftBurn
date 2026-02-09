@@ -88,13 +88,18 @@ final class EmptyStateDropView: NSView {
         registerForDraggedTypes([.photosLibraryIdentifier, .fileURL])
     }
 
+    override var isFlipped: Bool { true }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         let pb = sender.draggingPasteboard
+        print("[EmptyStateDropView] draggingEntered - types: \(pb.types ?? [])")
         // Photos Library drops - check BEFORE .fileURL since Photos provides both
         if pb.types?.contains(.photosLibraryIdentifier) == true {
+            print("[EmptyStateDropView] Detected Photos Library drop")
             return .copy
         }
         if pb.types?.contains(.fileURL) == true {
+            print("[EmptyStateDropView] Detected file URL drop")
             return .copy
         }
         return []
@@ -102,13 +107,17 @@ final class EmptyStateDropView: NSView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let pb = sender.draggingPasteboard
+        print("[EmptyStateDropView] performDragOperation - types: \(pb.types ?? [])")
 
         // Photos Library drop - check BEFORE .fileURL since Photos provides both
         if pb.types?.contains(.photosLibraryIdentifier) == true {
+            print("[EmptyStateDropView] Processing Photos Library drop")
             Task { @MainActor in
                 let result = await PhotosLibraryDropHandler.handleDrop(pasteboard: pb)
+                print("[EmptyStateDropView] Drop result: \(result)")
                 switch result {
                 case .photosLibraryItems(let items):
+                    print("[EmptyStateDropView] Got \(items.count) items")
                     if !items.isEmpty {
                         self.onDropPhotosLibraryItems?(items)
                     }
