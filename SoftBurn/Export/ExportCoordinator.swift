@@ -140,6 +140,25 @@ actor ExportCoordinator {
         // Check for cancellation before starting
         if await progress.isCancelled { throw ExportError.cancelled }
 
+        // Ensure temp files are always cleaned up, even on error or cancellation.
+        // On failure, also remove the incomplete output file.
+        var exportSucceeded = false
+        defer {
+            Task { [audioTempURL, videoTempURL] in
+                // Always clean up temp intermediates
+                if let url = audioTempURL {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                if let url = videoTempURL {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                // Remove incomplete output on failure
+                if !exportSucceeded {
+                    try? FileManager.default.removeItem(at: outputURL)
+                }
+            }
+        }
+
         // Phase 1: Preparing - Build timeline
         await MainActor.run { progress.phase = .preparing }
 
@@ -198,7 +217,9 @@ actor ExportCoordinator {
             await MainActor.run { progress.phase = .finalizing }
         }
 
-        // Clean up
+        exportSucceeded = true
+
+        // Clean up temp files (also handled by defer as safety net)
         await cleanup()
     }
 
@@ -390,7 +411,7 @@ actor ExportCoordinator {
     }
 
     private func getVideoDuration(_ item: MediaItem) async -> Double? {
-        await VideoMetadataCache.shared.durationSeconds(for: item.url)
+        await VideoMetadataCache.shared.durationSeconds(for: item)
     }
 
     private func getFaceBoxes(for item: MediaItem) async -> [CGRect] {
@@ -553,7 +574,7 @@ actor ExportCoordinator {
                     }
                     videoURL = url
                 }
-                reader = try await VideoFrameReader(url: videoURL, device: device)
+                reader = try await VideoFrameReader(url: videoURL, device: device, isFromPhotosLibrary: item.isFromPhotosLibrary)
                 videoReaders[item.id] = reader
             }
 

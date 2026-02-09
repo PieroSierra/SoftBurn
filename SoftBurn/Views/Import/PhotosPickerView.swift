@@ -7,6 +7,7 @@
 
 import SwiftUI
 import PhotosUI
+import os.log
 
 /// SwiftUI wrapper for PHPickerViewController to select photos/videos from Photos Library
 struct PhotosPickerView: NSViewControllerRepresentable {
@@ -50,8 +51,10 @@ struct PhotosPickerView: NSViewControllerRepresentable {
                     if let asset = fetchResult.firstObject {
                         assets.append(asset)
                     } else {
+                        os_log(.error, "PhotosPicker: Failed to fetch asset for identifier: %{public}@", assetIdentifier)
                     }
                 } else {
+                    os_log(.error, "PhotosPicker: Picker result has no asset identifier")
                 }
             }
 

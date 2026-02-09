@@ -507,7 +507,7 @@ class SlideshowPlayerState: ObservableObject {
         case .photo:
             return slideDuration
         case .video:
-            if playVideosInFull, let seconds = await VideoMetadataCache.shared.durationSeconds(for: item.url) {
+            if playVideosInFull, let seconds = await VideoMetadataCache.shared.durationSeconds(for: item) {
                 return seconds
             }
             return slideDuration

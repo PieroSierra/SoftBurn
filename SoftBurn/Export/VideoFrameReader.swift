@@ -33,7 +33,7 @@ actor VideoFrameReader {
     // Texture cache for GPU-efficient pixel buffer conversion
     private var textureCache: CVMetalTextureCache?
 
-    init(url: URL, device: MTLDevice) async throws {
+    init(url: URL, device: MTLDevice, isFromPhotosLibrary: Bool = false) async throws {
         self.device = device
         self.textureLoader = MTKTextureLoader(device: device)
 
@@ -57,7 +57,15 @@ actor VideoFrameReader {
 
         // Calculate rotation from transform
         let transform = try await videoTrack.load(.preferredTransform)
-        self.rotationDegrees = Self.rotationFromTransform(transform)
+        var rotation = Self.rotationFromTransform(transform)
+
+        // Photos Library videos: negate rotation to match the correction applied during
+        // live playback (VideoPlayerManager.swift:134-141). AVFoundation's coordinate system
+        // (Y-down) differs from Metal/CVPixelBuffer, so Photos Library videos need 90°↔270° swap.
+        if isFromPhotosLibrary && rotation != 0 {
+            rotation = (360 - rotation) % 360
+        }
+        self.rotationDegrees = rotation
 
         // Create texture cache
         var cache: CVMetalTextureCache?
