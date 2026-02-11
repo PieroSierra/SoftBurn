@@ -19,6 +19,8 @@
 
 3. ~~**Playback frame drop after incoming transition** — During live playback, when a video transitions from "next" to "current" (after the 2s crossfade completes), there is a brief visible glitch/frame drop.~~ **FIXED** (11 Feb 2026) — Same root cause as #1. Synchronous slot promotion + video source swap eliminates both the async race window and the AVPlayerItem output rebinding stall.
 
+4. ~~**Export: video audio cuts off after ~5s** — During video export, audio from video clips starts correctly but cuts out after exactly 5 seconds (the default slideDuration).~~ **FIXED** (11 Feb 2026) — `AudioComposer.addVideoAudio()` was using raw `exportSettings.slideDuration` (5s) for audio duration instead of the actual visible time. Fixed to use `incomingTransition + entry.holdDuration + entry.transitionDuration`, matching the full time the video is on screen.
+
 ## Export Issues
 
 | VIDEO EXPORT                      | Filesystem | Photos Library |

@@ -223,21 +223,17 @@ final class AudioComposer: Sendable {
             // Store reference for volume control (video audio at 100%)
             tracks.append(compositionTrack)
 
-            // Calculate video audio duration
+            // Calculate video audio duration: the audio should play for the entire time
+            // the video is visible (incoming transition + hold phase + outgoing transition).
             let videoDuration = try await videoAsset.load(.duration)
-            let insertDuration: CMTime
 
-            if exportSettings.playVideosInFull {
-                insertDuration = videoDuration
-            } else {
-                // Use slide duration
-                insertDuration = CMTime(seconds: exportSettings.slideDuration, preferredTimescale: 600)
-            }
+            let hasIncomingTransition = entry.startTime > 0 && exportSettings.transitionStyle != .plain
+            let incomingOffset: Double = hasIncomingTransition ? 2.0 : 0  // Fixed 2s crossfade
+            let audioDuration = incomingOffset + entry.holdDuration + entry.transitionDuration
+            let insertDuration = CMTime(seconds: audioDuration, preferredTimescale: 600)
 
             // Videos start playing when they first become visible during the previous slide's
             // outgoing transition. For the first slide there is no incoming transition.
-            let hasIncomingTransition = entry.startTime > 0 && exportSettings.transitionStyle != .plain
-            let incomingOffset: Double = hasIncomingTransition ? 2.0 : 0  // Fixed 2s crossfade
             let insertTime = CMTime(seconds: entry.startTime - incomingOffset, preferredTimescale: 600)
             let timeRange = CMTimeRange(start: .zero, duration: CMTimeMinimum(insertDuration, videoDuration))
 
