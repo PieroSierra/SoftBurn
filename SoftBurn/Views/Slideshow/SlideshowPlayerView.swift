@@ -176,18 +176,13 @@ class SlideshowPlayerState: ObservableObject {
     @Published var nextVideoReady: Bool = true
 
     private let imageLoader = PlaybackImageLoader()
-    private var slideTimer: Timer?
     private var animationTimer: Timer?
     private var isRunning = false
     private var didStartNextVideoThisCycle: Bool = false
-    private var waitingForVideoStartTime: Date?
 
     /// Observers for video loop detection
     private var currentVideoLoopObserver: NSObjectProtocol?
     private var nextVideoLoopObserver: NSObjectProtocol?
-
-    /// Maximum time to wait for a video to be ready before proceeding anyway
-    private static let maxWaitForVideoSeconds: Double = 3.0
     
     /// Total duration for one complete slide cycle (for current item)
     var totalSlideDuration: Double {
@@ -240,10 +235,8 @@ class SlideshowPlayerState: ObservableObject {
         isStopped = true
         isRunning = false
 
-        // Invalidate timers synchronously
-        slideTimer?.invalidate()
+        // Invalidate timer synchronously
         animationTimer?.invalidate()
-        slideTimer = nil
         animationTimer = nil
 
         // Remove loop observers
@@ -268,7 +261,6 @@ class SlideshowPlayerState: ObservableObject {
         nextStartOffset = .zero
         didStartNextVideoThisCycle = false
         nextVideoReady = true
-        waitingForVideoStartTime = nil
 
         // Drain the video player pool
         Task {
@@ -381,10 +373,9 @@ class SlideshowPlayerState: ObservableObject {
     
     private func startTimers() {
         guard !isStopped else { return }
-        
-        scheduleNextAdvance()
-        
-        // Animation timer for smooth progress updates (60fps)
+
+        // Single animation timer drives everything (60fps).
+        // Slot promotion is detected inline when animationProgress >= 1.0.
         let frameInterval = 1.0 / 60.0
         animationTimer = Timer.scheduledTimer(
             timeInterval: frameInterval,
@@ -395,119 +386,11 @@ class SlideshowPlayerState: ObservableObject {
         )
     }
 
-    private func scheduleNextAdvance() {
-        slideTimer?.invalidate()
-        slideTimer = Timer.scheduledTimer(
-            timeInterval: totalSlideDuration,
-            target: self,
-            selector: #selector(handleAdvanceTimer(_:)),
-            userInfo: nil,
-            repeats: false
-        )
-    }
-    
     private func restartTimers() {
-        slideTimer?.invalidate()
         animationTimer?.invalidate()
         startTimers()
     }
     
-    private func advanceSlide() async {
-        guard isRunning, !isStopped else { return }
-
-        // Stop any outgoing current video immediately (audio should not linger).
-        if currentKind == .video, let outgoing = currentVideo, outgoing !== nextVideo {
-            outgoing.pause()
-            // Remove old current loop observer
-            if let observer = currentVideoLoopObserver {
-                NotificationCenter.default.removeObserver(observer)
-                currentVideoLoopObserver = nil
-            }
-        }
-
-        // Move to next slide
-        currentIndex = (currentIndex + 1) % photos.count
-        animationProgress = 0
-        isTransitioning = false
-        didStartNextVideoThisCycle = false
-
-        // Promote "next" into "current" (preserve playback during overlap).
-        currentKind = nextKind
-        currentImage = nextImage
-        // Invalidate old current video before replacing
-        if currentVideo !== nextVideo {
-            currentVideo?.invalidate()
-        }
-        currentVideo = nextVideo
-        currentFaceBoxes = nextFaceBoxes
-        currentEndOffset = nextEndOffset
-        currentStartOffset = nextStartOffset
-
-        // Transfer next loop observer to current
-        if let observer = nextVideoLoopObserver {
-            // Remove old current observer first
-            if let oldObserver = currentVideoLoopObserver {
-                NotificationCenter.default.removeObserver(oldObserver)
-            }
-            currentVideoLoopObserver = observer
-            nextVideoLoopObserver = nil
-        }
-
-        // Ensure the promoted video is playing (it should have started during transition,
-        // but explicitly play to handle edge cases where it didn't start)
-        if currentKind == .video, let videoPlayer = currentVideo {
-            videoPlayer.play()
-            // If no loop observer yet (video wasn't started during transition), install one
-            if currentVideoLoopObserver == nil {
-                installLoopObserver(for: videoPlayer, isCurrent: true)
-            }
-        }
-
-        // Clear next slots before loading new next
-        nextImage = nil
-        nextVideo = nil
-        nextFaceBoxes = []
-        nextEndOffset = .zero
-        nextStartOffset = .zero
-        nextKind = .photo
-
-        // Compute hold duration for new current
-        let currentItem = photos[currentIndex]
-        currentHoldDuration = await holdDuration(for: currentItem)
-
-        // Load new next
-        let newNextIndex = (currentIndex + 1) % photos.count
-        let nextItem = photos[newNextIndex]
-        nextKind = nextItem.kind
-        nextStartOffset = Self.startOffset(for: transitionStyle)
-
-        switch nextItem.kind {
-        case .photo:
-            nextVideo?.invalidate()
-            nextVideo = nil
-            // Use MediaItem-based method to support both filesystem and Photos Library
-            nextImage = await imageLoader.loadImage(for: nextItem)
-
-            let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem) ?? []
-            let rotatedFaces = Self.rotateVisionRects(faces, degrees: nextItem.rotationDegrees)
-            nextFaceBoxes = rotatedFaces
-            nextEndOffset = Self.faceTargetOffset(from: rotatedFaces)
-        case .video:
-            nextImage = nil
-            nextFaceBoxes = []
-            nextEndOffset = .zero
-            nextVideo = await createVideoPlayer(for: nextItem, shouldAutoPlay: false)
-        }
-
-        // Compute next hold duration for Ken Burns zoom continuity
-        nextHoldDuration = await holdDuration(for: nextItem)
-
-        // Set up readiness monitoring for next video
-        updateNextVideoReadiness()
-
-        scheduleNextAdvance()
-    }
-
     /// Calculate how long a media item should hold as the sole visible slide.
     /// Delegates to MediaTimingCalculator for consistent logic across playback and export.
     private func holdDuration(for item: MediaItem) async -> Double {
@@ -601,10 +484,118 @@ class SlideshowPlayerState: ObservableObject {
         nextVideo = nil
     }
 
+    // MARK: - Synchronous slot promotion (stutter fix)
+
+    /// Synchronously promote "next" into "current" and reset for new cycle.
+    /// Called inline by the animation timer when animationProgress >= 1.0.
+    /// No async calls — this runs on the same frame that detects the boundary.
+    private func promoteNextToCurrent(overshoot: Double) {
+        guard isRunning, !isStopped else { return }
+
+        // Stop outgoing current video immediately (audio should not linger).
+        if currentKind == .video, let outgoing = currentVideo, outgoing !== nextVideo {
+            outgoing.pause()
+            if let observer = currentVideoLoopObserver {
+                NotificationCenter.default.removeObserver(observer)
+                currentVideoLoopObserver = nil
+            }
+        }
+
+        // Increment slide index
+        currentIndex = (currentIndex + 1) % photos.count
+
+        // Promote all "next" properties to "current"
+        currentKind = nextKind
+        currentImage = nextImage
+        if currentVideo !== nextVideo {
+            currentVideo?.invalidate()
+        }
+        currentVideo = nextVideo
+        currentFaceBoxes = nextFaceBoxes
+        currentEndOffset = nextEndOffset
+        currentStartOffset = nextStartOffset
+
+        // Transfer next loop observer to current
+        if let observer = nextVideoLoopObserver {
+            if let oldObserver = currentVideoLoopObserver {
+                NotificationCenter.default.removeObserver(oldObserver)
+            }
+            currentVideoLoopObserver = observer
+            nextVideoLoopObserver = nil
+        }
+
+        // Ensure promoted video is playing
+        if currentKind == .video, let videoPlayer = currentVideo {
+            videoPlayer.play()
+            if currentVideoLoopObserver == nil {
+                installLoopObserver(for: videoPlayer, isCurrent: true)
+            }
+        }
+
+        // Clear next slots
+        nextImage = nil
+        nextVideo = nil
+        nextFaceBoxes = []
+        nextEndOffset = .zero
+        nextStartOffset = .zero
+        nextKind = .photo
+
+        // Use pre-computed nextHoldDuration for immediate timing accuracy
+        currentHoldDuration = nextHoldDuration
+        nextHoldDuration = slideDuration
+
+        // Reset animation state with overshoot carry-over
+        animationProgress = overshoot
+        isTransitioning = false
+        didStartNextVideoThisCycle = false
+    }
+
+    /// Asynchronously load the new "next" media after synchronous promotion.
+    /// Runs in a fire-and-forget Task — does not block the render loop.
+    private func loadNextMediaInBackground() async {
+        guard !isStopped, !photos.isEmpty else { return }
+
+        // Refine currentHoldDuration with actual async computation
+        let currentItem = photos[currentIndex]
+        currentHoldDuration = await holdDuration(for: currentItem)
+        guard !isStopped else { return }
+
+        // Determine and load the new "next" item
+        let newNextIndex = (currentIndex + 1) % photos.count
+        let nextItem = photos[newNextIndex]
+        nextKind = nextItem.kind
+        nextStartOffset = Self.startOffset(for: transitionStyle)
+
+        switch nextItem.kind {
+        case .photo:
+            nextVideo?.invalidate()
+            nextVideo = nil
+            nextImage = await imageLoader.loadImage(for: nextItem)
+            guard !isStopped else { return }
+
+            let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem) ?? []
+            guard !isStopped else { return }
+            let rotatedFaces = Self.rotateVisionRects(faces, degrees: nextItem.rotationDegrees)
+            nextFaceBoxes = rotatedFaces
+            nextEndOffset = Self.faceTargetOffset(from: rotatedFaces)
+        case .video:
+            nextImage = nil
+            nextFaceBoxes = []
+            nextEndOffset = .zero
+            nextVideo = await createVideoPlayer(for: nextItem, shouldAutoPlay: false)
+            guard !isStopped else { return }
+        }
+
+        // Compute next hold duration for Ken Burns zoom continuity
+        nextHoldDuration = await holdDuration(for: nextItem)
+        guard !isStopped else { return }
+
+        // Update readiness monitoring
+        updateNextVideoReadiness()
+    }
+
     /// Update next video readiness state based on VideoPlayer status
     private func updateNextVideoReadiness() {
-        waitingForVideoStartTime = nil
-
         // Photos are always ready
         if nextKind == .photo {
             nextVideoReady = true
@@ -626,12 +617,6 @@ class SlideshowPlayerState: ObservableObject {
         updateAnimationProgress(deltaTime: frameInterval)
     }
 
-    @objc private func handleAdvanceTimer(_ timer: Timer) {
-        guard !isStopped else { return }
-        Task { @MainActor in
-            await self.advanceSlide()
-        }
-    }
 
     // MARK: - Face targeting
 
@@ -726,48 +711,46 @@ class SlideshowPlayerState: ObservableObject {
     private func updateAnimationProgress(deltaTime: Double) {
         guard isRunning, !isStopped else { return }
 
-        // Update transition state
+        // Update transition state and start next video when entering transition phase.
+        // Animation progress always advances — no freeze for video readiness.
+        // The renderer's opacity clamping handles the visual transition if next isn't ready.
         if transitionStyle != .plain {
             let transitionStartProgress = currentHoldDuration / totalSlideDuration
+            let inTransition = animationProgress >= transitionStartProgress && animationProgress < 1.0
 
-            // Check if we should wait for next video to be ready
-            let shouldStartTransition = animationProgress >= transitionStartProgress && animationProgress < 1.0
-
-            if shouldStartTransition && !isTransitioning {
-                // Re-check next video readiness (LoopingVideoPlayer status may have changed)
+            if inTransition && !isTransitioning {
+                // Entering transition phase — start next video playback if ready
                 if nextKind == .video {
                     nextVideoReady = (nextVideo?.status == .readyToPlay)
                 }
+            }
 
-                // If next is a video and not ready, pause progress until ready (with timeout)
-                if nextKind == .video && !nextVideoReady {
-                    // Start tracking wait time
-                    if waitingForVideoStartTime == nil {
-                        waitingForVideoStartTime = Date()
-                    }
-                    let waited = Date().timeIntervalSince(waitingForVideoStartTime!)
-                    if waited < Self.maxWaitForVideoSeconds {
-                        // Don't update progress, wait for video to be ready
-                        return
-                    }
-                    // Timeout reached - proceed anyway to prevent infinite wait
-                }
-                // Video is ready (or timed out) - clear wait state and start transition
-                waitingForVideoStartTime = nil
-
-                // Begin next video playback now (true overlap).
-                if nextKind == .video, !didStartNextVideoThisCycle, let videoPlayer = nextVideo {
+            // Start next video playback when ready (may happen on first transition frame or later)
+            if inTransition, nextKind == .video, !didStartNextVideoThisCycle {
+                if nextVideo?.status == .readyToPlay, let videoPlayer = nextVideo {
                     videoPlayer.play()
                     installLoopObserver(for: videoPlayer, isCurrent: false)
                     didStartNextVideoThisCycle = true
+                    nextVideoReady = true
                 }
             }
-            isTransitioning = shouldStartTransition
+
+            isTransitioning = inTransition
         }
 
-        // Update progress (after potential wait for video)
+        // Increment progress (unclamped — >= 1.0 triggers synchronous promotion)
         let progressIncrement = deltaTime / totalSlideDuration
-        animationProgress = min(1.0, animationProgress + progressIncrement)
+        animationProgress += progressIncrement
+
+        // Synchronous slot promotion: when progress reaches 1.0, promote on THIS frame.
+        // No async gap — the renderer never sees progress clamped at 1.0.
+        if animationProgress >= 1.0 {
+            let overshoot = animationProgress - 1.0
+            promoteNextToCurrent(overshoot: overshoot)
+            Task { @MainActor [weak self] in
+                await self?.loadNextMediaInBackground()
+            }
+        }
     }
 }
 

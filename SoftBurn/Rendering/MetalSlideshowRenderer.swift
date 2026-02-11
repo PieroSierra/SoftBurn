@@ -82,7 +82,7 @@ final class MetalSlideshowRenderer {
      * waiting for its first decoded frame.
      *
      * VIDEO FLASH FIX (January 2026):
-     * When a video is promoted from next to current via advanceSlide(), there's a
+     * When a video is promoted from next to current via promoteNextToCurrent(), there's a
      * window where currentVideoSource hasn't decoded frames yet. During this window,
      * we use this fallback texture (the last frame of the previous media) to prevent
      * showing the transparent placeholder through to the background.
@@ -103,8 +103,8 @@ final class MetalSlideshowRenderer {
      * is detached, so we can use it as a temporary fallback. See textureForSlot() for
      * the fallback logic.
      */
-    private let currentVideoSource: VideoTextureSource
-    private let nextVideoSource: VideoTextureSource
+    private var currentVideoSource: VideoTextureSource
+    private var nextVideoSource: VideoTextureSource
     private var currentVideoPlayerID: ObjectIdentifier?
     private var nextVideoPlayerID: ObjectIdentifier?
 
@@ -218,15 +218,32 @@ final class MetalSlideshowRenderer {
         }
 
         // Wire video outputs if the players changed.
+        //
+        // SWAP OPTIMIZATION: When a video moves from next→current (slot promotion),
+        // swap the VideoTextureSource references instead of removing and re-adding
+        // AVPlayerItemVideoOutput. The remove(output) + add(output) calls are
+        // synchronous kernel operations that block the main thread and cause audio
+        // glitches across all streams (including background music).
+        // By swapping, the promoted video's output continues uninterrupted.
         if let pooledPlayer = playerState.currentVideo {
             let id = ObjectIdentifier(pooledPlayer)
             if currentVideoPlayerID != id {
-                currentVideoPlayerID = id
-                currentVideoSource.setPooledPlayer(pooledPlayer)
+                if nextVideoPlayerID == id {
+                    // Video moved from next→current: swap sources (zero-cost).
+                    swap(&currentVideoSource, &nextVideoSource)
+                    currentVideoPlayerID = id
+                    // nextVideoPlayerID will be updated below when we process nextVideo.
+                } else {
+                    // Brand new video in current slot (e.g., manual nav): full rebind.
+                    currentVideoPlayerID = id
+                    currentVideoSource.setPooledPlayer(pooledPlayer)
+                }
             }
         } else {
-            currentVideoPlayerID = nil
-            currentVideoSource.setPooledPlayer(nil)
+            if currentVideoPlayerID != nil {
+                currentVideoPlayerID = nil
+                currentVideoSource.setPooledPlayer(nil)
+            }
         }
 
         if let pooledPlayer = playerState.nextVideo {
@@ -236,8 +253,14 @@ final class MetalSlideshowRenderer {
                 nextVideoSource.setPooledPlayer(pooledPlayer)
             }
         } else {
-            nextVideoPlayerID = nil
-            nextVideoSource.setPooledPlayer(nil)
+            if nextVideoPlayerID != nil {
+                nextVideoPlayerID = nil
+                // Defer cleanup: don't call setPooledPlayer(nil) if the source just
+                // swapped from current (the old player was already invalidated and
+                // returned to the pool — its output will be cleaned up naturally
+                // when a new next video is loaded or the pool recycles the player).
+                nextVideoSource.detachWithoutRemovingOutput()
+            }
         }
     }
 
@@ -269,21 +292,21 @@ final class MetalSlideshowRenderer {
              *
              *   animationProgress:  0.0 -------- 0.71 -------- 1.0
              *                       |            |             |
-             *                       hold phase   transition    advanceSlide()
-             *                                    begins        called
+             *                       hold phase   transition    promoteNextToCurrent()
+             *                                    begins        (synchronous)
              *
-             * RACE CONDITION FIX (January 2026):
-             * There's a brief window when animationProgress reaches 1.0 but advanceSlide()
-             * hasn't yet promoted the texture slots. During this window:
+             * PHASE 3 SAFETY NET:
+             * Slot promotion is now synchronous (promoteNextToCurrent() runs inline
+             * when animationProgress >= 1.0), so progress should never stay at 1.0 for
+             * more than 0 frames. However, under extreme system load a frame could
+             * theoretically be rendered with progress >= 1.0 before promotion completes.
+             * The Phase 3 opacity logic below handles this case as a safety net:
              *   - Current photo: drawn at 0% opacity (faded out)
-             *   - Next photo: MUST be drawn at 100% opacity (fully visible)
-             *
-             * Without this fix, both photos would be invisible, causing a background flash.
-             * The opacity calculation in makeLayerUniforms() handles this case explicitly.
+             *   - Next photo: drawn at 100% opacity (fully visible)
              *
              * VIDEO DECODER DELAY FIX (January 2026):
              * When transitioning to a video, the decoder may not have produced a frame yet
-             * even after advanceSlide() promotes the video to current. In this case, we
+             * even after promoteNextToCurrent() promotes the video to current. In this case, we
              * use a fallback texture (the last good current frame) to prevent showing
              * the transparent placeholder through to the background.
              */
@@ -340,8 +363,8 @@ final class MetalSlideshowRenderer {
              *
              * IMPORTANT: Do NOT add an upper bound check (animationProgress < 1.0) here!
              * The next photo must continue to be drawn even after progress reaches 1.0,
-             * because advanceSlide() runs asynchronously and there's a race window where
-             * the current photo is at 0% opacity but slots haven't been promoted yet.
+             * because promoteNextToCurrent() runs synchronously but under extreme system load
+             * a render frame could theoretically see progress >= 1.0 before promotion completes.
              *
              * The opacity calculation ensures:
              *   - During transition (transitionStart <= progress < 1.0): crossfade
@@ -522,10 +545,10 @@ final class MetalSlideshowRenderer {
      * VIDEO FLASH FIX (January 2026): Texture selection with fallback support.
      *
      * For videos, there's a critical timing issue when a video is promoted from
-     * "next" to "current" via advanceSlide():
+     * "next" to "current" via promoteNextToCurrent():
      *
      * 1. During transition: Video B plays in nextVideoSource, decodes frames
-     * 2. advanceSlide(): Video B promoted to current, nextVideo = nil
+     * 2. promoteNextToCurrent(): Video B promoted to current, nextVideo = nil
      * 3. update(): currentVideoSource.setPooledPlayer(videoB) creates NEW output
      * 4. update(): nextVideoSource.setPooledPlayer(nil) detaches player
      * 5. draw(): currentVideoSource has no decoded frames yet!
@@ -596,7 +619,7 @@ final class MetalSlideshowRenderer {
      * For videos: if the decoder hasn't produced a frame yet, we should not
      * draw the video at all (to avoid showing transparent placeholder).
      *
-     * IMPORTANT: When a video moves from "next" to "current" via advanceSlide(),
+     * IMPORTANT: When a video moves from "next" to "current" via promoteNextToCurrent(),
      * currentVideoSource creates a NEW output and hasn't decoded frames yet.
      * But nextVideoSource might still have decoded frames from when the video
      * was in the next slot! We check BOTH sources to handle this transition window.
@@ -730,9 +753,9 @@ final class MetalSlideshowRenderer {
          *    - Current: 0% opacity (must be invisible)
          *    - Next: 100% opacity (must be fully visible!)
          *
-         *    This phase exists because advanceSlide() is async. There's a brief window
-         *    where the animation timer has reached 1.0 but the slot promotion hasn't
-         *    completed yet. During this window, "next" must remain fully visible to
+         *    Safety net: promoteNextToCurrent() is synchronous so progress should never
+         *    stay at 1.0, but under extreme system load a render frame could theoretically
+         *    see progress >= 1.0 before promotion. "Next" remains fully visible to
          *    prevent a background flash.
          *
          * VIDEO READINESS CHECK (January 2026):
@@ -1153,8 +1176,8 @@ private final class VideoTextureSource {
             /*
              * VIDEO FLASH FIX (January 2026): Do NOT clear lastTexture here!
              *
-             * When a video is promoted from next to current via advanceSlide():
-             * 1. advanceSlide() sets nextVideo = nil (before loading new next)
+             * When a video is promoted from next to current via promoteNextToCurrent():
+             * 1. promoteNextToCurrent() sets nextVideo = nil (before loading new next)
              * 2. update() calls nextVideoSource.setPooledPlayer(nil)
              * 3. If we cleared lastTexture here, we'd lose the decoded frames!
              * 4. But currentVideoSource hasn't decoded frames yet...
@@ -1169,6 +1192,19 @@ private final class VideoTextureSource {
         }
 
         configureOutput(for: item)
+    }
+
+    /// Detach from the current player WITHOUT calling item.remove(output).
+    /// Used when a video source was swapped (its player moved to another slot)
+    /// and the old player has already been invalidated. The stale output will be
+    /// cleaned up naturally when the pool recycles the player or when a new
+    /// player is attached via setPooledPlayer().
+    func detachWithoutRemovingOutput() {
+        self.player = nil
+        self.playerItem = nil
+        output = nil
+        lastItemTime = .invalid
+        // Preserve lastTexture as a fallback (same as setPooledPlayer(nil))
     }
 
     private func configureOutput(for item: AVPlayerItem) {

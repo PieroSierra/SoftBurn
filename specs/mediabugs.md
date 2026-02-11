@@ -11,14 +11,13 @@
 
 ## Media Playback Known Issues
 
-1. Single-frame Stutter after 2s of playback
-* transition from A to B 'stops' for 1 frame... minor but annoying.
-* Auto stutters noticeably interrupted - major problem
-* We have attempted to fix this numerous times (see other notes), and the current state is the best we've achieved.
+1. ~~Single-frame Stutter after 2s of playback~~ **FIXED** (11 Feb 2026) — Two-part fix:
+   - **Timer fix**: Replaced two-timer model (slideTimer + animationTimer) with single animation timer. Slot promotion is now synchronous via `promoteNextToCurrent()` when `animationProgress >= 1.0`. No async race window. This fixed photo→photo stutter.
+   - **Video source swap fix**: When a video moves from next→current slot, the renderer now swaps `VideoTextureSource` references instead of calling `item.remove(output)` + `item.add(output)`. Those synchronous AVPlayerItemVideoOutput operations were blocking the main thread and causing audio buffer underruns across all streams (including background music). The swap is zero-cost — the promoted video's output continues uninterrupted. This fixed photo→video, video→video stutter and audio glitches.
 
 2. ~~Play in Full video playback does not work  - videos only play for the n seconds of the regular slideshow setting~~ **FIXED** (11 Feb 2026)
 
-3. **Playback frame drop after incoming transition** — During live playback, when a video transitions from "next" to "current" (after the 2s crossfade completes), there is a brief visible glitch/frame drop. The video and zoom continue correctly after. This is related to the async `advanceSlide()` race window described in the stutter analysis below. **Open — fix later.**
+3. ~~**Playback frame drop after incoming transition** — During live playback, when a video transitions from "next" to "current" (after the 2s crossfade completes), there is a brief visible glitch/frame drop.~~ **FIXED** (11 Feb 2026) — Same root cause as #1. Synchronous slot promotion + video source swap eliminates both the async race window and the AVPlayerItem output rebinding stall.
 
 ## Export Issues
 
@@ -565,20 +564,20 @@ For each cell, note: works / broken / partial (describe):
 
 ## Transition Stress Tests
 
-| Test                              | Watch for                    | Result |
-| --------------------------------- | ---------------------------- | ------ |
-| Photo→Photo crossfade             | Stutter at boundary          |        |
-| Photo→Video crossfade             | Stutter or black flash       |        |
-| Video→Photo crossfade             | Audio cutoff timing          |        |
-| Video→Video crossfade             | Audio overlap, texture flash |        |
-| Any transition with panAndZoom    | Motion freeze at boundary    |        |
-| Plain (no transition) with videos | Clean instant cut            |        |
+| Test                              | Watch for                    | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | After VideoTextureSource fix                     |
+| --------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Photo→Photo crossfade             | Stutter at boundary          | no stutter, works well                                                                                                                                                                                                                                                                                                                                                                                                                                                      | no stutter, works well                           |
+| Photo→Video crossfade             | Stutter or black flash       | stutter (video & audio) immediately after 2s transition completes.  Similar to past behaviors, but not excactly the same.  The video starts playing and animating at the right point (while Photo is fading out).  At the 2s end-of-transition mark, the video drops a freezes (or drops a few frames) and the audio 'skips' (actually I hear a bit of static/random noise for a beat).  But, the zoom animation is uninterrupted and smooth (in the past, it jumped a bit) | Fixed, no stutter or black flash or audio glitch |
+| Video→Photo crossfade             | Audio cutoff timing          | no stutter, audio cuts out at the correct time (when 2s exit transition is complete).  All good.                                                                                                                                                                                                                                                                                                                                                                            | no issues                                        |
+| Video→Video crossfade             | Audio overlap, texture flash | Video 1 transitons out smoothly (animation and frames and audio).  Video 2 starts playing audio and fading in during the 2s transtion (good) but then stutters and drops frames (as per Photo --> Video Crossfade)                                                                                                                                                                                                                                                          | no issues                                        |
+| Any transition with panAndZoom    | Motion freeze at boundary    | The above info is consitent for both cross-fade and Zoom/Pan and Zoom modes.                                                                                                                                                                                                                                                                                                                                                                                                | no issues                                        |
+| Plain (no transition) with videos | Clean instant cut            | Photo -> Video and Photo -> Photo transition do a clean, instant cut.<br/><br/>However Video -> Video has a stutter at the begginning of video 2.                                                                                                                                                                                                                                                                                                                           | no issues                                        |
 
 ## Edge Cases
 
-| Test                                   | Expected                        | Result |
-| -------------------------------------- | ------------------------------- | ------ |
-| Single photo slideshow                 | Loops with Ken Burns            |        |
-| Single video + Play in Full            | Plays full, loops               |        |
-| All items from iCloud (not downloaded) | Downloads, eventually plays     |        |
-| Music + video with sound               | Both audible, reasonable levels |        |
+| Test                                   | Expected                        | Result                                                                                                                                                                                                                                                                                     | After VideoTextureSource fix                        |
+| -------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| Single photo slideshow                 | Loops with Ken Burns            | smooth with no issues                                                                                                                                                                                                                                                                      | no issues                                           |
+| Single video + Play in Full            | Plays full, loops               | Video plays in full and loops, but there is a stutter and audio static after the 2s transition.  This applies in both "play in full" ON and OFF modes.                                                                                                                                     | no issues                                           |
+| All items from iCloud (not downloaded) | Downloads, eventually plays     | (did not test -- I want to wait until we clean up iCloud mangement later)                                                                                                                                                                                                                  | did not test yet.                                   |
+| Music + video with sound               | Both audible, reasonable levels | Both audible, reasonable levels BUT the looping video AND the sound-track noticeably stutter and I get audio static.  I find it interesting that this applies to the Music as well, since that is not really controlled by the timer... maybe the issue is audo stream management related? | no issues, all audio plays smoothly and no glitches |
