@@ -380,7 +380,8 @@ actor ExportCoordinator {
                     // Videos shorter than transition overlap loop at normal slide duration
                     holdDuration = adjusted > 0 ? adjusted : exportSettings.slideDuration
                 } else {
-                    holdDuration = videoDuration
+                    // Plain mode: only use video duration if longer than slide duration
+                    holdDuration = videoDuration > exportSettings.slideDuration ? videoDuration : exportSettings.slideDuration
                 }
             } else {
                 holdDuration = exportSettings.slideDuration

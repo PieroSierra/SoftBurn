@@ -359,6 +359,26 @@ Videos and audio in export now account for the incoming transition: for non-firs
 - `ExportCoordinator.swift:loadTexture()` — video frame time offset
 - `AudioComposer.swift:addVideoAudio()` — audio insertion time offset
 
+## Fix 8: Short Videos Loop in Plain Mode
+
+In plain mode (no transitions), "Play in Full" videos shorter than `slideDuration` were not looping — they held for their intrinsic duration (e.g., 1s) then immediately cut. Now both playback and export fall back to `slideDuration` when the video is shorter, matching the non-plain behavior.
+
+- `SlideshowPlayerView.swift:holdDuration()` — plain branch: return `seconds` only if `> slideDuration`
+- `ExportCoordinator.swift:buildTimeline()` — plain branch: same fallback
+
+---
+
+## Centralization Opportunity (Not Yet Implemented)
+
+The `holdDuration` calculation is duplicated in two independent locations with identical business logic:
+
+1. `SlideshowPlayerView.swift:holdDuration()` — live playback
+2. `ExportCoordinator.swift:buildTimeline()` — export
+
+Both implement the same rules: play-in-full check, transition overlap subtraction, short video fallback, plain mode handling. Each time we fix a bug in one, we must manually mirror it in the other. This is error-prone and has already caused bugs to be fixed in one path but not the other.
+
+**Recommendation**: Extract a shared `MediaTimingCalculator` (or similar) that computes `holdDuration` given `(MediaItem, videoDuration, slideDuration, transitionStyle, transitionDuration, playVideosInFull)`. Both playback and export would call the same function. This eliminates the duplication and guarantees consistent behavior.
+
 ---
 
 # Timing & Zoom Bugs — Analysis (**FIXED** 11 Feb 2026)

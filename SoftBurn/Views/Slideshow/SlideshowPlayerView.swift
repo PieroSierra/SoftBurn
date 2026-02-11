@@ -528,7 +528,10 @@ class SlideshowPlayerState: ObservableObject {
                     // Video shorter than transition overlap — loop at normal slide duration
                     return slideDuration
                 } else {
-                    return seconds
+                    // Plain mode: only use video duration if longer than slide duration
+                    if seconds > slideDuration {
+                        return seconds
+                    }
                 }
             }
             return slideDuration
