@@ -11,13 +11,14 @@
 
 ## Media Playback Known Issues
 
-1. Single-frame Stutter after 2s  of playback
-* transition from A to B 'stops' for 1 frame... minor but annoying.  
-
+1. Single-frame Stutter after 2s of playback
+* transition from A to B 'stops' for 1 frame... minor but annoying.
 * Auto stutters noticeably interrupted - major problem
+* We have attempted to fix this numerous times (see other notes), and the current state is the best we've achieved.
 
-* We have attempted to fix this numerous times (see other notes), and the current state is teh best we've achieved.
-2. Play in Full video playback does not work  - videos only play for the n seconds of the regular slideshow setting
+2. ~~Play in Full video playback does not work  - videos only play for the n seconds of the regular slideshow setting~~ **FIXED** (11 Feb 2026)
+
+3. **Playback frame drop after incoming transition** — During live playback, when a video transitions from "next" to "current" (after the 2s crossfade completes), there is a brief visible glitch/frame drop. The video and zoom continue correctly after. This is related to the async `advanceSlide()` race window described in the stutter analysis below. **Open — fix later.**
 
 ## Export Issues
 
@@ -307,9 +308,9 @@ The `AudioComposer` extracts audio tracks from video files. For Photos Library v
 
 `installLoopObserver()` adds a NotificationCenter observer for `AVPlayerItem.didPlayToEndTimeNotification`. Observers are cleaned up in `advanceSlide()` and `stop()`. But if `advanceSlide()` throws or is interrupted, an observer could leak. The observer closure captures `self` weakly, so it won't prevent deallocation, but it could fire unexpectedly on a stale player.
 
-### 9. Temp Export File Leak on Error
+### 9. ~~Temp Export File Leak on Error~~ **FIXED** (Fix 3)
 
-If export fails partway through (disk full, permission error), `ExportCoordinator.cleanup()` may not be called. Temp audio and video files in the temp directory will persist. The output file (if partially written) also persists. There's no `defer` block wrapping the export flow to guarantee cleanup.
+~~If export fails partway through (disk full, permission error), `ExportCoordinator.cleanup()` may not be called.~~ Fixed by adding `defer` cleanup block to `ExportCoordinator.export()`.
 
 ---
 
@@ -337,11 +338,32 @@ Added `isFromPhotosLibrary` parameter to `VideoFrameReader.init()`. When true, a
 - `VideoFrameReader.swift:36` — new `isFromPhotosLibrary` parameter, negation logic at line 65
 - `ExportCoordinator.swift:577` — passes `item.isFromPhotosLibrary` to VideoFrameReader
 
+## Fix 5: holdDuration Accounts for Transition Overlap
+
+For "Play in Full" videos with non-plain transitions, `holdDuration` now returns `videoDuration - 4s` (subtracting the 2s incoming + 2s outgoing crossfade time). Videos shorter than 4s fall back to `slideDuration` and loop normally.
+
+- `SlideshowPlayerView.swift:holdDuration()` — subtract `2 * transitionDuration`, fallback for short videos
+- `ExportCoordinator.swift:buildTimeline()` — same calculation for export
+
+## Fix 6: Ken Burns Zoom Uses Per-Slot Duration
+
+Added `nextHoldDuration` to `SlideshowPlayerState`. The live Metal renderer now calculates `motionTotal` per slot using the slot's own hold duration, preventing the zoom speed "snap" when transitioning between items with very different durations. The export path already handled this correctly.
+
+- `SlideshowPlayerView.swift` — new `nextHoldDuration` property, computed in `prepareCurrentAndNext()` and `advanceSlide()`
+- `MetalSlideshowRenderer.swift:800` — per-slot `motionTotal`
+
+## Fix 7: Export Video/Audio Time Offset
+
+Videos and audio in export now account for the incoming transition: for non-first slides, playback starts at `entry.startTime - 2s`. This fixes the "static frame during transition" bug (video frames) and the "audio offset by 2s" bug (audio composition).
+
+- `ExportCoordinator.swift:loadTexture()` — video frame time offset
+- `AudioComposer.swift:addVideoAudio()` — audio insertion time offset
+
 ---
 
-# Timing & Zoom Bugs — Analysis for Future Fix
+# Timing & Zoom Bugs — Analysis (**FIXED** 11 Feb 2026)
 
-These bugs are interconnected and need a coordinated fix. Documenting the full analysis here for a dedicated refactor.
+These bugs were interconnected and were fixed together. Analysis preserved below for reference.
 
 ## Bug: holdDuration Doesn't Account for Transition Overlap
 
@@ -501,13 +523,13 @@ Fill in results after running the app with the fixes applied.
 
 ## "Play in Full" Verification
 
-| Test                                            | Expected                                             | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Filesystem video, Play in Full ON, playback     | Video plays for its full duration                    | Video plays full duration (good).<br/><br/>Note that this reveals a further bug: animation is broken -- when the crossfade from A to B happens, the video (B) is zooming in fast, at the speed of the regular transition (which I had set to 5s).  But, when the cross-fade is complete, the video 'snaps' to a new size and then proceeds to fade very slowly (the video was 12m long).  When playing a video, we need to calcuate the speed of the video zoom based on the total length of the video (if "Play in Full" is set) and only then start cross-fading.                                                                                              |
-| Photos Library video, Play in Full ON, playback | Video plays for its full duration (was broken)       | Works, video plays full length with sound. But there's two bugs:<br/>1.When going from Photo A to Video B, Video B starts transitionning and playing and zooming in quickly... but then the video iself is long (52s)so after the 2s transtion, the video 'snaps' to a different size and zooms SLOWLY now (since zooom/52s), then goes back to fast zoom for the last 2s transtion... the speed of zoom needs to be based on the TOTAL playback length (including 4s of transitions).  Also when first trasntion completes, the audio stutters<br/>2. when the full video plays (52s), for the last 2s transition it loops (need to calculate length correctly) |
-| Filesystem video, Play in Full ON, export       | Exported segment matches video duration              | Setup is Photo A, Video B, Photo C (all from File System).  Works, with sound.  But bugs:<br/>1. during transition, video B shows as a static frame. after which it plays correctly with audio (thus 'skipping' the audio glitch)<br/>2.When Video B starts transitionning to Photo C, it loops (I see the beginning of B for 2 seconds, silently)                                                                                                                                                                                                                                                                                                               |
-| Photos Library video, Play in Full ON, export   | Exported segment matches video duration (was broken) | Setup is Photo A, Video B, Photo C (all from Photos Library).  Works, with sound.  But bugs:<br/>1. during transition, video B shows as a static frame. after which it plays correctly with audio (thus 'skipping' the audio glitch)<br/>2.Video B is exported as Rotated (but it plays fine in the Playback)<br/>                                                                                                                                                                                                                                                                                                                                               |
-| Mixed (both sources), Play in Full ON, playback | Each video plays for its own duration                | Works, with sound, but with the same issues as above.  During transtion from video A(FS) to video B(Photo library)<br/>1. video A ends before the 2s transtion and loops<br/>2. video B transitions  as a static frame, and only starts playing after the transition is complete (with sound)<br/>3. Video B is exported as Rotated (but it plays fine in the Playback)                                                                                                                                                                                                                                                                                          |
+| Test                                            | Expected                                             | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | After 11 Feb Fixes                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Filesystem video, Play in Full ON, playback     | Video plays for its full duration                    | Video plays full duration (good).<br/><br/>Note that this reveals a further bug: animation is broken -- when the crossfade from A to B happens, the video (B) is zooming in fast, at the speed of the regular transition (which I had set to 5s).  But, when the cross-fade is complete, the video 'snaps' to a new size and then proceeds to fade very slowly (the video was 12m long).  When playing a video, we need to calcuate the speed of the video zoom based on the total length of the video (if "Play in Full" is set) and only then start cross-fading.                                                                                              | Videos play full duration, timings all work.<br/><br/>Note that very short videos that are shorter than the transition_duration (I have one that is 1s) will play for just 1s when in Play in Full is on, but Loop when Play in Full is Off.  I would prefer these to loop for the full (2s + transition_duration + 2s) to avoid any timing issues. |
+| Photos Library video, Play in Full ON, playback | Video plays for its full duration (was broken)       | Works, video plays full length with sound. But there's two bugs:<br/>1.When going from Photo A to Video B, Video B starts transitionning and playing and zooming in quickly... but then the video iself is long (52s)so after the 2s transtion, the video 'snaps' to a different size and zooms SLOWLY now (since zooom/52s), then goes back to fast zoom for the last 2s transtion... the speed of zoom needs to be based on the TOTAL playback length (including 4s of transitions).  Also when first trasntion completes, the audio stutters<br/>2. when the full video plays (52s), for the last 2s transition it loops (need to calculate length correctly) | Videos play full duration, timings all work.<br/><br/>Note that I did not test very short videos, but I assume they will also "play once in full" instead of looping.  LIke for local FS videos, I would prefer them to loop for the duration.                                                                                                      |
+| Filesystem video, Play in Full ON, export       | Exported segment matches video duration              | Setup is Photo A, Video B, Photo C (all from File System).  Works, with sound.  But bugs:<br/>1. during transition, video B shows as a static frame. after which it plays correctly with audio (thus 'skipping' the audio glitch)<br/>2.When Video B starts transitionning to Photo C, it loops (I see the beginning of B for 2 seconds, silently)                                                                                                                                                                                                                                                                                                               | export works and transition timings and zoom are correct. <br/><br/> However, the sound timings are off:  the sound for a video doesn't start until AFTER the 2s entry transition and continues PAST the 2s exit transition by 2s.  So we're basically offset by 2s.                                                                                |
+| Photos Library video, Play in Full ON, export   | Exported segment matches video duration (was broken) | Setup is Photo A, Video B, Photo C (all from Photos Library).  Works, with sound.  But bugs:<br/>1. during transition, video B shows as a static frame. after which it plays correctly with audio (thus 'skipping' the audio glitch)<br/>2.Video B is exported as Rotated (but it plays fine in the Playback)<br/>                                                                                                                                                                                                                                                                                                                                               | export works and transition timings and zoom are correct. <br/><br/> However, the sound timings are off:  the sound for a video doesn't start until AFTER the 2s entry transition and continues PAST the 2s exit transition by 2s.  So we're basically offset by 2s.                                                                                |
+| Mixed (both sources), Play in Full ON, playback | Each video plays for its own duration                | Works, with sound, but with the same issues as above.  During transtion from video A(FS) to video B(Photo library)<br/>1. video A ends before the 2s transtion and loops<br/>2. video B transitions  as a static frame, and only starts playing after the transition is complete (with sound)<br/>3. Video B is exported as Rotated (but it plays fine in the Playback)                                                                                                                                                                                                                                                                                          | did not test                                                                                                                                                                                                                                                                                                                                        |
 
 ## Export Matrix
 

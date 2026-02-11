@@ -234,8 +234,11 @@ final class AudioComposer: Sendable {
                 insertDuration = CMTime(seconds: exportSettings.slideDuration, preferredTimescale: 600)
             }
 
-            // Insert at slide start time
-            let insertTime = CMTime(seconds: entry.startTime, preferredTimescale: 600)
+            // Videos start playing when they first become visible during the previous slide's
+            // outgoing transition. For the first slide there is no incoming transition.
+            let hasIncomingTransition = entry.startTime > 0 && exportSettings.transitionStyle != .plain
+            let incomingOffset: Double = hasIncomingTransition ? 2.0 : 0  // Fixed 2s crossfade
+            let insertTime = CMTime(seconds: entry.startTime - incomingOffset, preferredTimescale: 600)
             let timeRange = CMTimeRange(start: .zero, duration: CMTimeMinimum(insertDuration, videoDuration))
 
             do {

@@ -369,10 +369,19 @@ actor ExportCoordinator {
         var currentTime: Double = 0
 
         for (index, item) in photos.enumerated() {
-            // Calculate hold duration
+            // Calculate hold duration.
+            // For "play in full" videos with non-plain transitions, subtract 4s because the video
+            // is also visible during the incoming (2s) and outgoing (2s) crossfades.
             let holdDuration: Double
             if item.kind == .video && exportSettings.playVideosInFull {
-                holdDuration = await getVideoDuration(item) ?? exportSettings.slideDuration
+                let videoDuration = await getVideoDuration(item) ?? exportSettings.slideDuration
+                if exportSettings.transitionStyle != .plain {
+                    let adjusted = videoDuration - 2 * Self.transitionDuration
+                    // Videos shorter than transition overlap loop at normal slide duration
+                    holdDuration = adjusted > 0 ? adjusted : exportSettings.slideDuration
+                } else {
+                    holdDuration = videoDuration
+                }
             } else {
                 holdDuration = exportSettings.slideDuration
             }
@@ -579,10 +588,12 @@ actor ExportCoordinator {
             }
 
             // Calculate video playback time:
-            // - Video starts playing when it becomes visible (at entry.startTime - transitionDuration for "next" slot)
-            // - For simplicity, we use the time relative to when the slide's cycle starts
-            // - The video should play from the beginning when the slide starts its cycle
-            let videoTime = max(0, frameTime - entry.startTime)
+            // Videos start playing when they first become visible as "next" during the previous
+            // slide's outgoing transition. For the first slide there is no incoming transition.
+            // This offset ensures the video progresses continuously through incoming → hold → outgoing.
+            let hasIncomingTransition = entry.startTime > 0 && exportSettings.transitionStyle != .plain
+            let videoPlaybackStart = entry.startTime - (hasIncomingTransition ? Self.transitionDuration : 0)
+            let videoTime = max(0, frameTime - videoPlaybackStart)
             return try await reader.frame(atSeconds: videoTime)
         }
     }

@@ -148,6 +148,7 @@ class SlideshowPlayerState: ObservableObject {
     @Published var currentKind: MediaItem.Kind = .photo
     @Published var nextKind: MediaItem.Kind = .photo
     @Published var currentHoldDuration: Double = 5.0
+    @Published var nextHoldDuration: Double = 5.0
 
     /// Vision face boxes (normalized rects, origin bottom-left).
     /// These are rotated into the slideshow's rotation metadata space for consistency with rendering.
@@ -258,6 +259,7 @@ class SlideshowPlayerState: ObservableObject {
         currentKind = .photo
         nextKind = .photo
         currentHoldDuration = slideDuration
+        nextHoldDuration = slideDuration
         currentFaceBoxes = []
         nextFaceBoxes = []
         currentEndOffset = .zero
@@ -315,8 +317,9 @@ class SlideshowPlayerState: ObservableObject {
         currentKind = currentItem.kind
         nextKind = nextItem.kind
 
-        // Compute current hold duration (videos may use intrinsic duration).
+        // Compute hold durations (videos may use intrinsic duration).
         currentHoldDuration = await holdDuration(for: currentItem)
+        nextHoldDuration = await holdDuration(for: nextItem)
 
         // Start offsets depend on the transition style:
         // - Pan & Zoom: random start, then move toward face/center
@@ -496,19 +499,37 @@ class SlideshowPlayerState: ObservableObject {
             nextVideo = await createVideoPlayer(for: nextItem, shouldAutoPlay: false)
         }
 
+        // Compute next hold duration for Ken Burns zoom continuity
+        nextHoldDuration = await holdDuration(for: nextItem)
+
         // Set up readiness monitoring for next video
         updateNextVideoReadiness()
 
         scheduleNextAdvance()
     }
 
+    /// Calculate how long a media item should hold as the sole visible slide.
+    ///
+    /// For non-plain transitions, the video is actually visible for longer than holdDuration:
+    /// it starts playing during the incoming crossfade (2s) and continues through the outgoing
+    /// crossfade (2s). So total video visibility = 2s + holdDuration + 2s = holdDuration + 4s.
+    /// To play a video exactly once, holdDuration = videoDuration - 4s.
     private func holdDuration(for item: MediaItem) async -> Double {
         switch item.kind {
         case .photo:
             return slideDuration
         case .video:
             if playVideosInFull, let seconds = await VideoMetadataCache.shared.durationSeconds(for: item) {
-                return seconds
+                if transitionStyle != .plain {
+                    let adjusted = seconds - 2 * Self.transitionDuration
+                    if adjusted > 0 {
+                        return adjusted
+                    }
+                    // Video shorter than transition overlap — loop at normal slide duration
+                    return slideDuration
+                } else {
+                    return seconds
+                }
             }
             return slideDuration
         }

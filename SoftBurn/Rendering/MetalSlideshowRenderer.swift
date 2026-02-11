@@ -797,7 +797,12 @@ final class MetalSlideshowRenderer {
         let offset: CGSize
         if playerState.transitionStyle == .panAndZoom || playerState.transitionStyle == .zoom {
             let cycleElapsed = playerState.animationProgress * playerState.totalSlideDuration
-            let motionTotal = playerState.currentHoldDuration + (2.0 * SlideshowPlayerState.transitionDuration)
+
+            // Use per-slot hold duration so the zoom speed matches each item's own duration.
+            // Without this, a long video appearing as "next" during a short photo's transition
+            // would zoom at the short photo's speed, then snap when promoted to "current".
+            let holdForSlot = (slot == .current) ? playerState.currentHoldDuration : playerState.nextHoldDuration
+            let motionTotal = holdForSlot + (2.0 * SlideshowPlayerState.transitionDuration)
             let currentMotionElapsed = cycleElapsed + SlideshowPlayerState.transitionDuration
             let nextMotionElapsed = max(0.0, cycleElapsed - playerState.currentHoldDuration)
 
