@@ -138,7 +138,7 @@ class SlideshowPlayerState: ObservableObject {
     let playVideosInFull: Bool
 
     /// Fixed transition duration (2 seconds as per spec)
-    static let transitionDuration: Double = 2.0
+    static let transitionDuration: Double = MediaTimingCalculator.transitionDuration
 
     @Published var currentIndex: Int = 0
     @Published var currentImage: NSImage?
@@ -509,33 +509,19 @@ class SlideshowPlayerState: ObservableObject {
     }
 
     /// Calculate how long a media item should hold as the sole visible slide.
-    ///
-    /// For non-plain transitions, the video is actually visible for longer than holdDuration:
-    /// it starts playing during the incoming crossfade (2s) and continues through the outgoing
-    /// crossfade (2s). So total video visibility = 2s + holdDuration + 2s = holdDuration + 4s.
-    /// To play a video exactly once, holdDuration = videoDuration - 4s.
+    /// Delegates to MediaTimingCalculator for consistent logic across playback and export.
     private func holdDuration(for item: MediaItem) async -> Double {
-        switch item.kind {
-        case .photo:
-            return slideDuration
-        case .video:
-            if playVideosInFull, let seconds = await VideoMetadataCache.shared.durationSeconds(for: item) {
-                if transitionStyle != .plain {
-                    let adjusted = seconds - 2 * Self.transitionDuration
-                    if adjusted > 0 {
-                        return adjusted
-                    }
-                    // Video shorter than transition overlap — loop at normal slide duration
-                    return slideDuration
-                } else {
-                    // Plain mode: only use video duration if longer than slide duration
-                    if seconds > slideDuration {
-                        return seconds
-                    }
-                }
-            }
-            return slideDuration
-        }
+        let videoDuration: Double? = (item.kind == .video)
+            ? await VideoMetadataCache.shared.durationSeconds(for: item)
+            : nil
+
+        return MediaTimingCalculator.holdDuration(
+            kind: item.kind,
+            videoDuration: videoDuration,
+            slideDuration: slideDuration,
+            transitionStyle: transitionStyle,
+            playVideosInFull: playVideosInFull
+        )
     }
 
     /// Create a video player for a MediaItem and install loop observer

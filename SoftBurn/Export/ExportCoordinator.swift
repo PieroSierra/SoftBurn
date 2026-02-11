@@ -95,7 +95,7 @@ actor ExportCoordinator {
     private var totalFrames: Int = 0
 
     // Transition duration (matches playback)
-    private static let transitionDuration: Double = 2.0
+    private static let transitionDuration: Double = MediaTimingCalculator.transitionDuration
 
     init(photos: [MediaItem], exportSettings: ExportSettings, preset: ExportPreset, progress: ExportProgress, frameRate: Int, presetWidth: Int, presetHeight: Int, videoSettings: [String: Any], device: MTLDevice) {
         self.photos = photos
@@ -369,23 +369,18 @@ actor ExportCoordinator {
         var currentTime: Double = 0
 
         for (index, item) in photos.enumerated() {
-            // Calculate hold duration.
-            // For "play in full" videos with non-plain transitions, subtract 4s because the video
-            // is also visible during the incoming (2s) and outgoing (2s) crossfades.
-            let holdDuration: Double
-            if item.kind == .video && exportSettings.playVideosInFull {
-                let videoDuration = await getVideoDuration(item) ?? exportSettings.slideDuration
-                if exportSettings.transitionStyle != .plain {
-                    let adjusted = videoDuration - 2 * Self.transitionDuration
-                    // Videos shorter than transition overlap loop at normal slide duration
-                    holdDuration = adjusted > 0 ? adjusted : exportSettings.slideDuration
-                } else {
-                    // Plain mode: only use video duration if longer than slide duration
-                    holdDuration = videoDuration > exportSettings.slideDuration ? videoDuration : exportSettings.slideDuration
-                }
-            } else {
-                holdDuration = exportSettings.slideDuration
-            }
+            // Calculate hold duration via shared timing logic
+            let videoDuration: Double? = (item.kind == .video)
+                ? await getVideoDuration(item)
+                : nil
+
+            let holdDuration = MediaTimingCalculator.holdDuration(
+                kind: item.kind,
+                videoDuration: videoDuration,
+                slideDuration: exportSettings.slideDuration,
+                transitionStyle: exportSettings.transitionStyle,
+                playVideosInFull: exportSettings.playVideosInFull
+            )
 
             // Calculate transition duration
             let transitionDuration: Double

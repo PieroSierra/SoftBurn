@@ -368,16 +368,15 @@ In plain mode (no transitions), "Play in Full" videos shorter than `slideDuratio
 
 ---
 
-## Centralization Opportunity (Not Yet Implemented)
+## Fix 9: Centralize holdDuration Logic (MediaTimingCalculator)
 
-The `holdDuration` calculation is duplicated in two independent locations with identical business logic:
+Extracted the duplicated `holdDuration` calculation into a shared `MediaTimingCalculator` enum in `Utilities/MediaTimingCalculator.swift`. Both playback and export now call the same function, eliminating the class of bugs where one path gets fixed but the other doesn't. The `transitionDuration` constant (2.0s) is also defined once in `MediaTimingCalculator` and referenced by both `SlideshowPlayerState` and `ExportCoordinator`.
 
-1. `SlideshowPlayerView.swift:holdDuration()` — live playback
-2. `ExportCoordinator.swift:buildTimeline()` — export
-
-Both implement the same rules: play-in-full check, transition overlap subtraction, short video fallback, plain mode handling. Each time we fix a bug in one, we must manually mirror it in the other. This is error-prone and has already caused bugs to be fixed in one path but not the other.
-
-**Recommendation**: Extract a shared `MediaTimingCalculator` (or similar) that computes `holdDuration` given `(MediaItem, videoDuration, slideDuration, transitionStyle, transitionDuration, playVideosInFull)`. Both playback and export would call the same function. This eliminates the duplication and guarantees consistent behavior.
+- `SoftBurn/Utilities/MediaTimingCalculator.swift` — new file, single source of truth
+- `SlideshowPlayerView.swift:holdDuration()` — now delegates to `MediaTimingCalculator.holdDuration()`
+- `SlideshowPlayerView.swift:transitionDuration` — now references `MediaTimingCalculator.transitionDuration`
+- `ExportCoordinator.swift:buildTimeline()` — now calls `MediaTimingCalculator.holdDuration()`
+- `ExportCoordinator.swift:transitionDuration` — now references `MediaTimingCalculator.transitionDuration`
 
 ---
 
