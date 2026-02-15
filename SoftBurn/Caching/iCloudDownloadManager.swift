@@ -29,6 +29,12 @@ final class DownloadStatePublisher: ObservableObject {
     nonisolated let objectWillChange = ObservableObjectPublisher()
     static let shared = DownloadStatePublisher()
     private(set) var states: [UUID: DownloadState] = [:]
+    private(set) var networkRestoredGeneration: Int = 0
+
+    func notifyNetworkRestored() {
+        networkRestoredGeneration += 1
+        objectWillChange.send()
+    }
 
     /// Set initial downloading state for Photos Library items synchronously on MainActor.
     /// Call BEFORE addPhotos() so ThumbnailView sees badges on its very first render.
@@ -65,6 +71,7 @@ actor iCloudDownloadManager {
 
     private let maxRetries = 3
     private let downloadTimeout: TimeInterval = 30
+    private var lastNetworkRetryTime: CFAbsoluteTime = 0
 
     // Network monitoring
     private let monitor = NWPathMonitor()
@@ -168,9 +175,19 @@ actor iCloudDownloadManager {
         let wasUnavailable = !_isNetworkAvailable
         _isNetworkAvailable = satisfied
 
-        // Network restored — retry all unavailable items
-        if satisfied && wasUnavailable {
-            retryUnavailableItems()
+        // On macOS, non-WiFi interfaces (Thunderbolt Bridge, etc.) can keep the path
+        // "satisfied" even when WiFi is off. So rather than requiring a full offline→online
+        // transition, retry whenever the path changes to satisfied — with a cooldown to
+        // prevent rapid-fire retries when the path flaps.
+        guard satisfied else { return }
+
+        let now = CFAbsoluteTimeGetCurrent()
+        guard wasUnavailable || (now - lastNetworkRetryTime) > 30 else { return }
+        lastNetworkRetryTime = now
+
+        retryUnavailableItems()
+        Task { @MainActor in
+            DownloadStatePublisher.shared.notifyNetworkRestored()
         }
     }
 

@@ -1125,6 +1125,7 @@ final class MediaThumbnailCellView: NSView {
     private var thumbnailTask: Task<Void, Never>?
     private var durationTask: Task<Void, Never>?
     private var downloadStateSub: AnyCancellable?
+    private var lastSeenNetworkGeneration: Int = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1345,7 +1346,7 @@ final class MediaThumbnailCellView: NSView {
 
     private func layoutStatusBadge() {
         guard !statusContainer.isHidden else { return }
-        let badgeSize: CGFloat = 28
+        let badgeSize: CGFloat = 30
         let anchorRect = currentImageRect.isEmpty ? bounds : currentImageRect
         let origin = CGPoint(
             x: anchorRect.midX - badgeSize / 2,
@@ -1388,9 +1389,21 @@ final class MediaThumbnailCellView: NSView {
     }
 
     /// Called by Combine when DownloadStatePublisher changes.
-    /// Only acts when the item has a download state (Photos Library items).
+    /// Handles both Photos Library items (tracked in states dict) and
+    /// filesystem items on iCloud Drive (retry thumbnail on network restore).
     private func updateDownloadStatus() {
         guard let id = currentID else { return }
+
+        // FS items: retry thumbnail when network restores and cell is showing error
+        let gen = DownloadStatePublisher.shared.networkRestoredGeneration
+        if DownloadStatePublisher.shared.states[id] == nil {
+            if gen != lastSeenNetworkGeneration && !statusContainer.isHidden {
+                lastSeenNetworkGeneration = gen
+                retryFSThumbnail()
+            }
+            return
+        }
+
         guard let state = DownloadStatePublisher.shared.states[id] else { return }
         switch state {
         case .downloading:
@@ -1415,6 +1428,31 @@ final class MediaThumbnailCellView: NSView {
                         CATransaction.commit()
                         self.needsLayout = true
                     }
+                }
+            }
+        }
+    }
+
+    /// Retry thumbnail load for a filesystem item (iCloud Drive) after network restore.
+    private func retryFSThumbnail() {
+        guard let media = currentMedia, let id = currentID else { return }
+        showStatusLoading()
+        thumbnailTask?.cancel()
+        thumbnailTask = Task { [weak self] in
+            await ThumbnailCache.shared.invalidate(for: media)
+            let thumb = await ThumbnailCache.shared.thumbnail(for: media)
+            await MainActor.run { [weak self] in
+                guard let self, self.currentID == id else { return }
+                if let thumb, let cg = thumb.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                    self.currentImagePixelSize = CGSize(width: cg.width, height: cg.height)
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    self.imageLayer.contents = cg
+                    CATransaction.commit()
+                    self.hideStatus()
+                    self.needsLayout = true
+                } else {
+                    self.showStatusError()
                 }
             }
         }
