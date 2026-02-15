@@ -89,6 +89,10 @@ final class MetalSlideshowRenderer {
      */
     private var fallbackCurrentTexture: MTLTexture?
 
+    /// Placeholder texture shown when an iCloud Photos Library item hasn't downloaded yet.
+    /// Neutral dark gray with a centered cloud icon — participates in normal crossfade transitions.
+    private var iCloudPlaceholderTexture: MTLTexture?
+
     // Texture cache for Photos Library assets (to avoid reloading)
     private var photosLibraryTextureCache: [String: MTLTexture] = [:]
     private var photosLibraryLoadingSet: Set<String> = []
@@ -323,7 +327,7 @@ final class MetalSlideshowRenderer {
              * If current is a video with no decoded frames yet, use the fallback texture
              * (which contains the last good frame from the previous current media).
              */
-            var currentTexture = textureForSlot(kind: playerState.currentKind, slot: .current)
+            var currentTexture = textureForSlot(kind: playerState.currentKind, slot: .current, isPlaceholder: playerState.currentIsPlaceholder)
             let usingFallback: Bool
             if playerState.currentKind == .video && !currentTextureReady {
                 // Video has no decoded frame - use fallback if available
@@ -374,7 +378,7 @@ final class MetalSlideshowRenderer {
             let shouldDrawNext = playerState.transitionStyle != .plain &&
                                 playerState.animationProgress >= transitionStart
             if shouldDrawNext,
-               let tex = textureForSlot(kind: playerState.nextKind, slot: .next) {
+               let tex = textureForSlot(kind: playerState.nextKind, slot: .next, isPlaceholder: playerState.nextIsPlaceholder) {
                 let u = makeLayerUniforms(
                     mediaTexture: tex,
                     drawableSize: CGSize(width: sceneTexture.width, height: sceneTexture.height),
@@ -460,6 +464,43 @@ final class MetalSlideshowRenderer {
         desc.usage = [.renderTarget, .shaderRead]
         desc.storageMode = .private
         sceneTexture = device.makeTexture(descriptor: desc)
+    }
+
+    /// Returns (or lazily creates) the iCloud placeholder texture.
+    private func getOrCreatePlaceholderTexture() -> MTLTexture? {
+        if let tex = iCloudPlaceholderTexture { return tex }
+
+        let size = 512
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            // Dark gray background
+            NSColor(white: 0.18, alpha: 1.0).setFill()
+            NSBezierPath(rect: rect).fill()
+
+            // Centered SF Symbol
+            if let symbol = NSImage(systemSymbolName: "icloud.and.arrow.down", accessibilityDescription: nil) {
+                let config = NSImage.SymbolConfiguration(pointSize: 80, weight: .light)
+                let configured = symbol.withSymbolConfiguration(config) ?? symbol
+                let symbolSize = configured.size
+                let origin = NSPoint(
+                    x: (rect.width - symbolSize.width) / 2,
+                    y: (rect.height - symbolSize.height) / 2
+                )
+                NSColor(white: 0.45, alpha: 1.0).setFill()
+                configured.draw(at: origin, from: .zero, operation: .sourceOver, fraction: 0.8)
+            }
+            return true
+        }
+
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let loader = MTKTextureLoader(device: device)
+        let tex = try? loader.newTexture(cgImage: cg, options: [
+            .SRGB: false,
+            .origin: MTKTextureLoader.Origin.topLeft,
+            .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
+            .textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue),
+        ])
+        iCloudPlaceholderTexture = tex
+        return tex
     }
 
     private func loadPhotoTexture(from key: PhotoKey) -> MTLTexture? {
@@ -560,10 +601,14 @@ final class MetalSlideshowRenderer {
      * Key insight: nextVideoSource.lastTexture persists even after the player is
      * detached, so we can use it as a bridge until currentVideoSource catches up.
      */
-    private func textureForSlot(kind: MediaItem.Kind, slot: Slot) -> MTLTexture? {
+    private func textureForSlot(kind: MediaItem.Kind, slot: Slot, isPlaceholder: Bool = false) -> MTLTexture? {
         switch kind {
         case .photo:
-            return (slot == .current) ? currentPhotoTexture : nextPhotoTexture
+            let tex = (slot == .current) ? currentPhotoTexture : nextPhotoTexture
+            if tex == nil && isPlaceholder {
+                return getOrCreatePlaceholderTexture()
+            }
+            return tex
         case .video:
             if slot == .current {
                 /*

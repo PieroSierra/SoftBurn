@@ -1016,20 +1016,30 @@ struct ContentView: View {
                 await FaceDetectionCache.shared.ingest(faceRectsByPath: document.faceRectsByPath)
             }
             
+            // Publish download state synchronously for Photos Library items
+            // BEFORE replacePhotos so ThumbnailView sees badges on first render
+            let photosLibraryItems = photos.filter { $0.isFromPhotosLibrary }
+            if !photosLibraryItems.isEmpty {
+                DownloadStatePublisher.shared.register(photosLibraryItems)
+            }
+
             // Replace current photos
             slideshowState.replacePhotos(with: photos)
-            
+
             // Apply settings from loaded document (overrides app settings)
             settings.applyFromDocument(document.settings)
-            
+
             // Opening a document sets a clean baseline.
             session.markClean()
 
             // Add to recents after successful load
             recentsManager.addOrUpdate(url: url)
 
-            // Face detection prefetch (open-time only; never during playback)
+            // Probe + download in background, then face detect
             Task.detached(priority: .utility) {
+                for item in photosLibraryItems {
+                    await iCloudDownloadManager.shared.trackItem(item)
+                }
                 await FaceDetectionCache.shared.prefetch(items: photos)
             }
             
@@ -1043,12 +1053,19 @@ struct ContentView: View {
     @MainActor
     private func handlePhotosLibrarySelection(_ assets: [PHAsset]) {
         let mediaItems = PhotosLibraryManager.shared.createMediaItems(from: assets)
+
+        // Publish download state synchronously on MainActor BEFORE addPhotos,
+        // so ThumbnailView sees badges on its very first render.
+        DownloadStatePublisher.shared.register(mediaItems)
         slideshowState.addPhotos(mediaItems)
         session.markDirty()
         isImportingFromPhotos = false
 
-        // Face detection prefetch for Photos Library items
+        // Probe + download in background
         Task.detached(priority: .utility) {
+            for item in mediaItems {
+                await iCloudDownloadManager.shared.trackItem(item)
+            }
             await FaceDetectionCache.shared.prefetch(items: mediaItems)
         }
     }
@@ -1056,11 +1073,17 @@ struct ContentView: View {
     /// Handle drag-and-drop from Photos.app.
     @MainActor
     private func handlePhotosLibraryDrop(_ items: [MediaItem]) {
+        // Publish download state synchronously on MainActor BEFORE addPhotos,
+        // so ThumbnailView sees badges on its very first render.
+        DownloadStatePublisher.shared.register(items)
         slideshowState.addPhotos(items)
         session.markDirty()
 
-        // Face detection prefetch for dropped Photos Library items
+        // Probe + download in background
         Task.detached(priority: .utility) {
+            for item in items {
+                await iCloudDownloadManager.shared.trackItem(item)
+            }
             await FaceDetectionCache.shared.prefetch(items: items)
         }
     }

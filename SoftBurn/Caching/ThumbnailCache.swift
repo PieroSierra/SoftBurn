@@ -336,5 +336,14 @@ actor ThumbnailCache {
             }
         }
     }
+
+    /// Invalidate cached thumbnail for a specific MediaItem, forcing re-fetch on next request.
+    func invalidate(for item: MediaItem) {
+        // Remove all size bucket variants for this item
+        for bucket in [SizeBucket.standard, SizeBucket.large] {
+            let key = Key(from: item, sizeBucket: bucket)
+            cache.removeValue(forKey: key)
+        }
+    }
 }
 

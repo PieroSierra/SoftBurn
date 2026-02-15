@@ -252,6 +252,8 @@ Current state: Stable, production-ready with unified Metal rendering pipeline.
 - UserDefaults via @AppStorage (hex color strings, enum raw values) (003-wes-color-palettes)
 - Swift 5.9+ (Swift 6 compatible, strict concurrency) + SwiftUI, Metal 3, AVFoundation, Vision (all built-in macOS frameworks) (005-fix-transition-stutter)
 - N/A (bug fix, no new persistence) (005-fix-transition-stutter)
+- Swift 5.9+ (strict concurrency, Swift 6 compatible) + SwiftUI, Metal 3, PhotoKit (PHImageManager, PHAssetResourceManager), Network framework (NWPathMonitor), Vision framework — all built-in macOS frameworks (006-icloud-media-handling)
+- In-memory state (download states are transient, not persisted to .softburn files) (006-icloud-media-handling)
 
 ## Recent Changes
 - 001-open-recent: Added Swift 5.9+ with strict concurrency (Swift 6 compatible) + SwiftUI, AppKit, Foundation (all built-in macOS frameworks)

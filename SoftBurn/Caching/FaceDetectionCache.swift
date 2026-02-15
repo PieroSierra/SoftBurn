@@ -19,6 +19,11 @@ actor FaceDetectionCache {
     /// Cache key format: "file://path" for filesystem, "photos://localID" for Photos Library
     private var cache: [String: [CGRect]] = [:]
     private var inFlight: Set<String> = []
+    /// Items whose face detection failed because the iCloud image wasn't available yet.
+    /// These are retried when iCloudDownloadManager reports the download completed.
+    private var pendingRetry: Set<String> = []
+    /// Maps cache keys back to MediaItems for retry
+    private var pendingRetryItems: [String: MediaItem] = [:]
 
     private let maxParallelDetections: Int = 3
 
@@ -209,21 +214,65 @@ actor FaceDetectionCache {
         }.value
     }
 
-    /// Detect faces from a MediaItem (supports both filesystem and Photos Library)
+    /// Detect faces from a MediaItem (supports both filesystem and Photos Library).
+    /// For Photos Library items, returns [] and adds to pendingRetry if image wasn't available.
     private func detectFaces(item: MediaItem) async -> [CGRect] {
         switch item.source {
         case .filesystem(let url):
             return await detectFaces(url: url)
         case .photosLibrary(let localID, _):
-            return await detectFaces(photosLibraryLocalID: localID)
+            if let faces = await detectFaces(photosLibraryLocalID: localID) {
+                return faces
+            } else {
+                // Image not available — mark for retry when download completes
+                let key = cacheKey(for: item)
+                pendingRetry.insert(key)
+                pendingRetryItems[key] = item
+                return []
+            }
         }
     }
 
-    /// Detect faces from a Photos Library asset using CGImage
-    private func detectFaces(photosLibraryLocalID: String) async -> [CGRect] {
+    /// Retry face detection for a specific item that just finished downloading.
+    /// Called by iCloudDownloadManager when a download completes.
+    func retryPendingItems(for item: MediaItem) async {
+        let key = cacheKey(for: item)
+        guard pendingRetry.contains(key) else { return }
+
+        pendingRetry.remove(key)
+        pendingRetryItems.removeValue(forKey: key)
+
+        // Re-run detection (respects inFlight guard in prefetch)
+        // Remove any cached empty result first so prefetch will re-detect
+        cache.removeValue(forKey: key)
+        inFlight.remove(key)
+
+        await prefetch(items: [item])
+    }
+
+    /// Retry all pending items (called when network becomes available).
+    func retryAllPendingItems() async {
+        let itemsToRetry = Array(pendingRetryItems.values)
+        guard !itemsToRetry.isEmpty else { return }
+
+        // Clear pending state — prefetch will re-detect
+        for item in itemsToRetry {
+            let key = cacheKey(for: item)
+            pendingRetry.remove(key)
+            pendingRetryItems.removeValue(forKey: key)
+            cache.removeValue(forKey: key)
+            inFlight.remove(key)
+        }
+
+        await prefetch(items: itemsToRetry)
+    }
+
+    /// Detect faces from a Photos Library asset using CGImage.
+    /// Returns nil if the image couldn't be loaded (iCloud not available) — distinct from [] (no faces found).
+    private func detectFaces(photosLibraryLocalID: String) async -> [CGRect]? {
         // Load CGImage from Photos Library
         guard let cgImage = await PhotosLibraryImageLoader.shared.loadFullResolutionCGImage(localIdentifier: photosLibraryLocalID) else {
-            return []
+            return nil // Image not available (likely iCloud not downloaded)
         }
 
         // Run face detection on the CGImage

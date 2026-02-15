@@ -12,6 +12,7 @@
 ## Media Playback Known Issues
 
 1. ~~Single-frame Stutter after 2s of playback~~ **FIXED** (11 Feb 2026) — Two-part fix:
+   
    - **Timer fix**: Replaced two-timer model (slideTimer + animationTimer) with single animation timer. Slot promotion is now synchronous via `promoteNextToCurrent()` when `animationProgress >= 1.0`. No async race window. This fixed photo→photo stutter.
    - **Video source swap fix**: When a video moves from next→current slot, the renderer now swaps `VideoTextureSource` references instead of calling `item.remove(output)` + `item.add(output)`. Those synchronous AVPlayerItemVideoOutput operations were blocking the main thread and causing audio buffer underruns across all streams (including background music). The swap is zero-cost — the promoted video's output continues uninterrupted. This fixed photo→video, video→video stutter and audio glitches.
 
@@ -23,16 +24,16 @@
 
 ## Export Issues
 
-| VIDEO EXPORT                      | Filesystem | Photos Library |
-| --------------------------------- | ---------- | -------------- |
-| Photo, present                    |            |                |
-| Photo, iCloud                     |            |                |
-| Video, Present (play in full OFF) |            |                |
-| Video, iCloud (play in full OFF)  |            |                |
-| Video, Present (play in full ON)  |            |                |
-| Video, iCloud (play in full ON)   |            |                |
+| VIDEO EXPORT                      | Filesystem | Photos Library                     |
+| --------------------------------- | ---------- | ---------------------------------- |
+| Photo, present                    | works      | works                              |
+| Photo, iCloud                     | N/A        | not tested (iCloud review pending) |
+| Video, present (play in full OFF) | works      | works                              |
+| Video, iCloud (play in full OFF)  | N/A        | not tested (iCloud review pending) |
+| Video, present (play in full ON)  | works      | works                              |
+| Video, iCloud (play in full ON)   | N/A        | not tested (iCloud review pending) |
 
-To be tested -- but I believe the same audio issues apply.
+Export works correctly for all present (non-iCloud) media with mixed sources. iCloud content deferred until iCloud codepaths are reviewed.
 
 ---
 
@@ -44,18 +45,17 @@ Deep code review of the media pipeline — import, playback, transitions, and ex
 
 Understanding the timer model and texture lifecycle is necessary context for the bugs below.
 
-### Three-Phase Slide Cycle
+### Two-Phase Slide Cycle (Single-Timer Model)
 
-Each slide goes through three phases controlled by two timers:
+Each slide goes through two phases driven by a single animation timer (60fps):
 
 ```
 Phase 1 (Hold):       0 ≤ animationProgress < transitionStart
 Phase 2 (Transition): transitionStart ≤ animationProgress < 1.0
-Phase 3 (Race):       animationProgress ≥ 1.0, waiting for advanceSlide()
+→ When animationProgress >= 1.0: synchronous promoteNextToCurrent(), overshoot carried to next cycle
 ```
 
-- **Slide timer** — fires once after `totalSlideDuration` (hold + 2s transition), triggers async `advanceSlide()`
-- **Animation timer** — fires at 60fps, increments `animationProgress` from 0.0 to 1.0
+- **Animation timer** — fires at 60fps, increments `animationProgress` from 0.0 toward 1.0. When it reaches or exceeds 1.0, `promoteNextToCurrent()` runs synchronously on the same frame. No async gap.
 
 `totalSlideDuration = currentHoldDuration + transitionDuration` (2.0s for non-plain styles, 0 for plain).
 
@@ -63,7 +63,7 @@ Example with 5s hold + 2s transition = 7s total:
 
 - Hold: 0.0 → 0.71 (5s)
 - Transition: 0.71 → 1.0 (2s, crossfade/zoom)
-- advanceSlide() promotes next→current, loads new next, resets to 0.0
+- At 1.0: synchronous `promoteNextToCurrent(overshoot)` promotes next→current, resets progress. `loadNextMediaInBackground()` fires async.
 
 ### Slot Model
 
@@ -72,71 +72,20 @@ The renderer maintains two slots:
 - **Current** — the visible media (photo texture or video player)
 - **Next** — pre-loaded for the upcoming transition
 
-On `advanceSlide()`: next is promoted to current, old current is released, new next is loaded async.
+On `promoteNextToCurrent()`: next is promoted to current synchronously (same frame), old current is released. When a video moves from next→current, the renderer swaps `VideoTextureSource` references (zero-cost) instead of rebinding AVPlayerItemVideoOutput. New next is loaded async via `loadNextMediaInBackground()`.
 
 ### Metal Rendering (Two-Pass)
 
 1. **Pass 1 — Scene Composition**: Renders current + next layers to offscreen texture with opacity/scale/offset uniforms
 2. **Pass 2 — Patina**: Applies film simulation (35mm/aged/VHS) or blits directly when patina=none
 
-Opacity during transition is calculated from `animationProgress`, NOT from the `isTransitioning` flag (which can be out of sync).
+Opacity during transition is calculated from `animationProgress`. The renderer includes safety nets: opacity clamping when next texture isn't ready, and fallback textures for video decode latency.
 
 ---
 
-## Confirmed Bug: "Play in Full" Broken for Photos Library Videos
+## ~~Confirmed Bug: "Play in Full" Broken for Photos Library Videos~~ **FIXED** (Fix 1)
 
-**Severity: High** — Feature completely non-functional for Photos Library videos (both playback and export).
-
-### Root Cause
-
-`SlideshowPlayerView.swift:510`:
-
-```swift
-if playVideosInFull, let seconds = await VideoMetadataCache.shared.durationSeconds(for: item.url) {
-    return seconds
-}
-return slideDuration
-```
-
-`ExportCoordinator.swift:393`:
-
-```swift
-private func getVideoDuration(_ item: MediaItem) async -> Double? {
-    await VideoMetadataCache.shared.durationSeconds(for: item.url)
-}
-```
-
-Both call `durationSeconds(for: URL)` — the **URL overload** (VideoMetadataCache.swift:49). This overload creates an `AVURLAsset` from the URL and loads its duration.
-
-For Photos Library items, `item.url` returns a **synthetic URL**: `photos://asset/{localID}`. This is not a valid file URL. `AVURLAsset` cannot load from it, so `asset.load(.duration)` throws, `durationSeconds` returns `nil`, and `holdDuration` falls back to `slideDuration`.
-
-`VideoMetadataCache` already has a correct overload at line 20:
-
-```swift
-func durationSeconds(for item: MediaItem) async -> Double?
-```
-
-This properly handles Photos Library videos by calling `PHAsset.duration`. But neither `SlideshowPlayerView` nor `ExportCoordinator` calls it.
-
-### Impact
-
-- **Playback**: Photos Library videos always play for `slideDuration` regardless of "Play in Full" setting
-- **Export**: Same — exported videos truncated to `slideDuration`
-- **Filesystem videos**: Work correctly (real file URL)
-
-### Fix
-
-Change both call sites to use the `MediaItem` overload:
-
-- `SlideshowPlayerView.swift:510`: `durationSeconds(for: item)` instead of `durationSeconds(for: item.url)`
-- `ExportCoordinator.swift:393`: `durationSeconds(for: item)` instead of `durationSeconds(for: item.url)`
-
-### How to Test
-
-1. Import a video from Photos Library (not filesystem)
-2. Enable "Play in Full" in settings
-3. Play slideshow — video should play for its intrinsic duration, not `slideDuration`
-4. Export with "Play in Full" on — exported video should include full video duration
+Fixed by changing both call sites to use the `MediaItem` overload of `VideoMetadataCache.durationSeconds()`. See Fix 1 below for details.
 
 ---
 
@@ -226,48 +175,34 @@ Photos Library videos are exported to `/tmp/SoftBurnVideoExport/` via `PHAssetRe
 
 ## Edge Cases to Test Manually
 
-### High Priority (likely to expose bugs)
+### Resolved (11 Feb 2026)
 
-1. **Photos Library video + "Play in Full" ON** — Confirmed broken (see bug above). Test both playback and export.
+These were tested and confirmed working after the transition stutter + video source swap + audio fixes:
 
-2. **Photos Library video + iCloud (not downloaded) + Play** — Does the video eventually appear? Is there any feedback while downloading? What happens if you lose network mid-download?
+1. ~~**Photos Library video + "Play in Full" ON**~~ — Works (Fix 1 + Fix 5 + Fix 6)
+2. ~~**Mixed slideshow (photos + videos from both sources) + transitions**~~ — No stutter, no missing frames
+3. ~~**Video→Video transitions**~~ — Smooth crossfade, correct audio overlap during 2s transition
+4. ~~**Export with Photos Library videos**~~ — Works with sound, correct rotation, correct timing
+5. ~~**Single video slideshow + "Play in Full" ON**~~ — Loops correctly
+6. ~~**Single photo slideshow**~~ — Loops with Ken Burns, no issues
+7. ~~**Plain transition style + videos**~~ — Clean instant cut
+8. ~~**Music + video audio interaction**~~ — Both audible, no glitches
 
-3. **Mixed slideshow (photos + videos from both sources) + transitions** — Play a slideshow with alternating filesystem photos, Photos Library photos, filesystem videos, Photos Library videos. Watch for:
-   
-   - Stutter at video→photo transitions
-   - Stutter at photo→video transitions
-   - Missing frames when transitioning between sources
+### Still Open — iCloud
 
-4. **Video→Video transitions** — Two consecutive videos with crossfade. The next video starts playing during transition (SlideshowPlayerView.swift:749-752). Watch for:
-   
-   - Audio overlap (both videos playing simultaneously during 2s transition)
-   - Texture flash if second video hasn't decoded yet
+9. ~~**Photos Library video + iCloud (not downloaded) + Play**~~ — Partially addressed by Fix 10 (iCloud download manager, grid badges, preview placeholders). Playback still shows nothing for unavailable items during slide duration.
 
-5. **Export with Photos Library videos** — Export a slideshow containing Photos Library videos. Check:
-   
-   - Are video segments present in export?
-   - Is video audio included?
-   - With "Play in Full" ON vs OFF?
+10. ~~**All items iCloud + no network**~~ — Grid now shows error badges. Preview shows "Not available" placeholder. Auto-retries when network returns.
 
-6. **All items iCloud + no network** — What happens? Does the app hang? Show errors? Skip items?
+10b. **Filesystem iCloud Drive items don't refresh thumbnails after download** — FS items from iCloud Drive show a spinner during download and an error icon if unavailable, but after macOS completes the iCloud Drive sync the thumbnail does not auto-refresh. Requires re-import or app restart. Out of scope for spec 006 (Photos Library focus).
 
-### Medium Priority
+### Still Open — Other
 
-7. **Single video slideshow + "Play in Full" ON** — Does the video loop? Next index wraps to itself: `(0+1) % 1 = 0`.
+11. **Large slideshow (100+ items) + "Play in Full" ON** — Memory usage. Face detection cache and thumbnail cache are both unbounded (`[String: [CGRect]]` and similar dicts). Check for memory growth over time.
 
-8. **Single photo slideshow** — Same wrapping logic. Should display indefinitely with Ken Burns motion.
+12. **Export cancel mid-way** — Does cleanup happen? Is the incomplete output file deleted? (Current code does NOT delete the output file on cancel — ExportCoordinator.cleanup() only removes temp audio/video intermediates.)
 
-9. **Plain transition style + videos** — With `transitionStyle = .plain`, `transitionDuration = 0` and `totalSlideDuration = holdDuration` only. Verify instant cut works cleanly.
-
-10. **Large slideshow (100+ items) + "Play in Full" ON** — Memory usage. Face detection cache and thumbnail cache are both unbounded (`[String: [CGRect]]` and similar dicts). Check for memory growth over time.
-
-11. **Export cancel mid-way** — Does cleanup happen? Is the incomplete output file deleted? (Current code does NOT delete the output file on cancel — ExportCoordinator.cleanup() only removes temp audio/video intermediates.)
-
-12. **File deleted during playback** — Import a filesystem photo, start playback, delete the file externally. The texture is cached so current play continues, but what happens on the next loop?
-
-### Lower Priority
-
-13. **Music + video audio interaction** — Background music plays via MusicPlaybackManager. Video audio plays via AVPlayer. They are independent. Verify volume levels make sense when both play simultaneously.
+13. **File deleted during playback** — Import a filesystem photo, start playback, delete the file externally. The texture is cached so current play continues, but what happens on the next loop?
 
 14. **Export with no audio sources** — No background music selected, all videos muted or no videos. Does export produce a valid file with silent audio or no audio track?
 
@@ -307,7 +242,7 @@ The `AudioComposer` extracts audio tracks from video files. For Photos Library v
 
 ### 8. Video Loop Observer Leak Potential
 
-`installLoopObserver()` adds a NotificationCenter observer for `AVPlayerItem.didPlayToEndTimeNotification`. Observers are cleaned up in `advanceSlide()` and `stop()`. But if `advanceSlide()` throws or is interrupted, an observer could leak. The observer closure captures `self` weakly, so it won't prevent deallocation, but it could fire unexpectedly on a stale player.
+`installLoopObserver()` adds a NotificationCenter observer for `AVPlayerItem.didPlayToEndTimeNotification`. Observers are cleaned up in `promoteNextToCurrent()` and `stop()`. But if promotion is interrupted, an observer could leak. The observer closure captures `self` weakly, so it won't prevent deallocation, but it could fire unexpectedly on a stale player.
 
 ### 9. ~~Temp Export File Leak on Error~~ **FIXED** (Fix 3)
 
@@ -378,6 +313,36 @@ Extracted the duplicated `holdDuration` calculation into a shared `MediaTimingCa
 - `SlideshowPlayerView.swift:transitionDuration` — now references `MediaTimingCalculator.transitionDuration`
 - `ExportCoordinator.swift:buildTimeline()` — now calls `MediaTimingCalculator.holdDuration()`
 - `ExportCoordinator.swift:transitionDuration` — now references `MediaTimingCalculator.transitionDuration`
+
+## Fix 10: iCloud Download State Visibility (15 Feb 2026)
+
+Centralized iCloud download tracking for Photos Library items with visible UI feedback across grid, preview, and playback.
+
+**New file**: `SoftBurn/Caching/iCloudDownloadManager.swift`
+- `DownloadStatePublisher` (@MainActor ObservableObject) — synchronous state publication for SwiftUI/AppKit observation
+- `iCloudDownloadManager` (actor) — probes local availability via `PHAssetResourceManager` with `isNetworkAccessAllowed=false`, downloads full-resolution assets, retries with exponential backoff, auto-retries on network restoration via `NWPathMonitor`
+
+**Grid** (`MediaGridCollectionView.swift`):
+- Unified status badge (centered circular vibrancy frame) replaces three separate indicators (spinner, placeholder icon, iCloud badge)
+- Loading state: centered spinner inside hudWindow material circle (both FS and Photos Library)
+- Error state: centered `icloud.slash.fill` inside same circle (both FS and Photos Library)
+- Combines subscription to `DownloadStatePublisher` for real-time badge updates
+- Thumbnail auto-refreshes when download completes
+
+**Preview** (`PhotoViewerSheet.swift`):
+- Dark card background (`Color(white: 0.15)`) when no content loaded
+- "Downloading from iCloud..." placeholder with spinner
+- "Not available offline" persistent error placeholder
+- Auto-reloads when download state transitions to ready
+
+**ContentView.swift**:
+- `DownloadStatePublisher.shared.register()` called synchronously on MainActor BEFORE `addPhotos()` at all three entry points (selection, drop, file load)
+- Ensures grid cells see download state on their very first render
+
+**FaceDetectionCache.swift**:
+- `retryPendingItems(for:)` re-runs face detection when an iCloud item finishes downloading
+
+**Known remaining issue**: Filesystem iCloud Drive items don't auto-refresh thumbnails after macOS sync completes (see item 10b above).
 
 ---
 
@@ -539,47 +504,99 @@ if frameTime < entry.startTime {
 
 # Manual Testing Checklist
 
-Fill in results after running the app with the fixes applied.
+## Playback & Export — ALL PASSING (11 Feb 2026)
 
-## "Play in Full" Verification
+All playback and export tests pass for locally-present media (both Filesystem and Photos Library sources). The following were verified after Fixes 1-11:
 
-| Test                                            | Expected                                             | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | After 11 Feb Fixes                                                                                                                                                                                                                                                                                                                                  |
-| ----------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Filesystem video, Play in Full ON, playback     | Video plays for its full duration                    | Video plays full duration (good).<br/><br/>Note that this reveals a further bug: animation is broken -- when the crossfade from A to B happens, the video (B) is zooming in fast, at the speed of the regular transition (which I had set to 5s).  But, when the cross-fade is complete, the video 'snaps' to a new size and then proceeds to fade very slowly (the video was 12m long).  When playing a video, we need to calcuate the speed of the video zoom based on the total length of the video (if "Play in Full" is set) and only then start cross-fading.                                                                                              | Videos play full duration, timings all work.<br/><br/>Note that very short videos that are shorter than the transition_duration (I have one that is 1s) will play for just 1s when in Play in Full is on, but Loop when Play in Full is Off.  I would prefer these to loop for the full (2s + transition_duration + 2s) to avoid any timing issues. |
-| Photos Library video, Play in Full ON, playback | Video plays for its full duration (was broken)       | Works, video plays full length with sound. But there's two bugs:<br/>1.When going from Photo A to Video B, Video B starts transitionning and playing and zooming in quickly... but then the video iself is long (52s)so after the 2s transtion, the video 'snaps' to a different size and zooms SLOWLY now (since zooom/52s), then goes back to fast zoom for the last 2s transtion... the speed of zoom needs to be based on the TOTAL playback length (including 4s of transitions).  Also when first trasntion completes, the audio stutters<br/>2. when the full video plays (52s), for the last 2s transition it loops (need to calculate length correctly) | Videos play full duration, timings all work.<br/><br/>Note that I did not test very short videos, but I assume they will also "play once in full" instead of looping.  LIke for local FS videos, I would prefer them to loop for the duration.                                                                                                      |
-| Filesystem video, Play in Full ON, export       | Exported segment matches video duration              | Setup is Photo A, Video B, Photo C (all from File System).  Works, with sound.  But bugs:<br/>1. during transition, video B shows as a static frame. after which it plays correctly with audio (thus 'skipping' the audio glitch)<br/>2.When Video B starts transitionning to Photo C, it loops (I see the beginning of B for 2 seconds, silently)                                                                                                                                                                                                                                                                                                               | export works and transition timings and zoom are correct. <br/><br/> However, the sound timings are off:  the sound for a video doesn't start until AFTER the 2s entry transition and continues PAST the 2s exit transition by 2s.  So we're basically offset by 2s.                                                                                |
-| Photos Library video, Play in Full ON, export   | Exported segment matches video duration (was broken) | Setup is Photo A, Video B, Photo C (all from Photos Library).  Works, with sound.  But bugs:<br/>1. during transition, video B shows as a static frame. after which it plays correctly with audio (thus 'skipping' the audio glitch)<br/>2.Video B is exported as Rotated (but it plays fine in the Playback)<br/>                                                                                                                                                                                                                                                                                                                                               | export works and transition timings and zoom are correct. <br/><br/> However, the sound timings are off:  the sound for a video doesn't start until AFTER the 2s entry transition and continues PAST the 2s exit transition by 2s.  So we're basically offset by 2s.                                                                                |
-| Mixed (both sources), Play in Full ON, playback | Each video plays for its own duration                | Works, with sound, but with the same issues as above.  During transtion from video A(FS) to video B(Photo library)<br/>1. video A ends before the 2s transtion and loops<br/>2. video B transitions  as a static frame, and only starts playing after the transition is complete (with sound)<br/>3. Video B is exported as Rotated (but it plays fine in the Playback)                                                                                                                                                                                                                                                                                          | did not test                                                                                                                                                                                                                                                                                                                                        |
+- Play in Full: correct duration, zoom speed, short video looping, audio timing
+- Transitions: photo-photo, photo-video, video-photo, video-video — all smooth (crossfade, zoom, pan & zoom, plain)
+- Export: correct video frames, audio timing, rotation, mixed sources
+- Edge cases: single photo loop, single video loop, music + video audio, rapid arrow key navigation
 
-## Export Matrix
+**Not tested**: iCloud content (see iCloud test table below).
 
-For each cell, note: works / broken / partial (describe):
+## Transition Stress Tests — ALL PASSING (11 Feb 2026)
 
-| VIDEO EXPORT                      | Filesystem | Photos Library |
-| --------------------------------- | ---------- | -------------- |
-| Photo, present                    |            |                |
-| Photo, iCloud                     |            |                |
-| Video, present (play in full OFF) |            |                |
-| Video, iCloud (play in full OFF)  |            |                |
-| Video, present (play in full ON)  |            |                |
-| Video, iCloud (play in full ON)   |            |                |
+| Test                              | Status                                              |
+| --------------------------------- | --------------------------------------------------- |
+| Photo→Photo crossfade             | PASS                                                |
+| Photo→Video crossfade             | PASS (was broken, fixed by VideoTextureSource swap) |
+| Video→Photo crossfade             | PASS                                                |
+| Video→Video crossfade             | PASS                                                |
+| Any transition with panAndZoom    | PASS                                                |
+| Plain (no transition) with videos | PASS                                                |
 
-## Transition Stress Tests
+## Edge Cases — ALL PASSING (11 Feb 2026)
 
-| Test                              | Watch for                    | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | After VideoTextureSource fix                     |
-| --------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| Photo→Photo crossfade             | Stutter at boundary          | no stutter, works well                                                                                                                                                                                                                                                                                                                                                                                                                                                      | no stutter, works well                           |
-| Photo→Video crossfade             | Stutter or black flash       | stutter (video & audio) immediately after 2s transition completes.  Similar to past behaviors, but not excactly the same.  The video starts playing and animating at the right point (while Photo is fading out).  At the 2s end-of-transition mark, the video drops a freezes (or drops a few frames) and the audio 'skips' (actually I hear a bit of static/random noise for a beat).  But, the zoom animation is uninterrupted and smooth (in the past, it jumped a bit) | Fixed, no stutter or black flash or audio glitch |
-| Video→Photo crossfade             | Audio cutoff timing          | no stutter, audio cuts out at the correct time (when 2s exit transition is complete).  All good.                                                                                                                                                                                                                                                                                                                                                                            | no issues                                        |
-| Video→Video crossfade             | Audio overlap, texture flash | Video 1 transitons out smoothly (animation and frames and audio).  Video 2 starts playing audio and fading in during the 2s transtion (good) but then stutters and drops frames (as per Photo --> Video Crossfade)                                                                                                                                                                                                                                                          | no issues                                        |
-| Any transition with panAndZoom    | Motion freeze at boundary    | The above info is consitent for both cross-fade and Zoom/Pan and Zoom modes.                                                                                                                                                                                                                                                                                                                                                                                                | no issues                                        |
-| Plain (no transition) with videos | Clean instant cut            | Photo -> Video and Photo -> Photo transition do a clean, instant cut.<br/><br/>However Video -> Video has a stutter at the begginning of video 2.                                                                                                                                                                                                                                                                                                                           | no issues                                        |
+| Test                        | Status                                   |
+| --------------------------- | ---------------------------------------- |
+| Single photo slideshow      | PASS — Loops with Ken Burns              |
+| Single video + Play in Full | PASS — Plays full, loops                 |
+| Music + video with sound    | PASS — Both audible, no glitches         |
+| iCloud content              | NOT TESTED — see iCloud test table below |
 
-## Edge Cases
+---
 
-| Test                                   | Expected                        | Result                                                                                                                                                                                                                                                                                     | After VideoTextureSource fix                        |
-| -------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
-| Single photo slideshow                 | Loops with Ken Burns            | smooth with no issues                                                                                                                                                                                                                                                                      | no issues                                           |
-| Single video + Play in Full            | Plays full, loops               | Video plays in full and loops, but there is a stutter and audio static after the 2s transition.  This applies in both "play in full" ON and OFF modes.                                                                                                                                     | no issues                                           |
-| All items from iCloud (not downloaded) | Downloads, eventually plays     | (did not test -- I want to wait until we clean up iCloud mangement later)                                                                                                                                                                                                                  | did not test yet.                                   |
-| Music + video with sound               | Both audible, reasonable levels | Both audible, reasonable levels BUT the looping video AND the sound-track noticeably stutter and I get audio static.  I find it interesting that this applies to the Music as well, since that is not really controlled by the timer... maybe the issue is audo stream management related? | no issues, all audio plays smoothly and no glitches |
+## iCloud Handling Test Table
+
+**Purpose**: Identify all iCloud-related issues before improving iCloud codepaths.
+
+**Setup**: To test, ensure some Photos Library items are in iCloud (not downloaded locally). You can check in Photos.app → select item → File → Show Referenced File in Finder. Optimized/iCloud items won't have a local file. Alternatively, enable "Optimize Mac Storage" in Photos → Settings → iCloud to force some items to iCloud-only thumbnails.
+
+**Known code issues from audit** (see "Photos Library vs Filesystem: Inconsistencies" section above):
+
+- `isNetworkAccessAllowed = true` with no timeout — callbacks may never fire
+- No per-item download progress shown in grid UI
+- Temp video files may accumulate if download/export is interrupted
+
+### Import & Grid Display
+
+| #    | Test                                           | Steps                                             | Expected                                                                                       | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ---- | ---------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IC-1 | Import iCloud photo (Photos Library)           | Add a photo that is iCloud-only via Photos picker | Photo appears in grid. Should show placeholder/spinner while downloading, then full thumbnail  | Dragging an offloaded picture:<br/>1. the thumbnail appears immediately (with no progress)<br/>2. If I Preview, it shows a spinner and eventually resolves.<br/>Note that if I cut Wifi, then import, the thumbnail appears, but Preview never resolves. <br/><br/>Overall photos download very quickly, so it's hard to see the bug (but it's there)                                                                                                                                                |
+| IC-2 | Import iCloud video (Photos Library)           | Add a video that is iCloud-only via Photos picker | Video appears in grid. Should show placeholder/spinner while downloading, then video thumbnail | Same as Photo - thumbnails appear immediately (with correct mm:ss stamp) but no progress is shown in the view... Preview will show them downloading and eventually resolve.  But if I cut Wifi they never resolve.                                                                                                                                                                                                                                                                                   |
+| IC-3 | Import mix of local + iCloud items             | Select 5+ items, some local, some iCloud-only     | Local items appear immediately. iCloud items download in background. No items silently dropped | This works -- the local ones appear immediately; the iCloud ones show as blank-frame-with-spinner.  Eventually they resolve.  Preview works the same (shows spinner and eventually shows the image).  NOTE that the Preview 'spinner' state is a bit wonky because there is no 'default' picture... so the spinner is centered but there's no frame to anchor the other controls that would normally be on top of the image.  So might be good to add a placeholder Media item (with spinner on top) |
+| IC-4 | Import iCloud items with no network            | Disable Wi-Fi, then add iCloud-only items         | Should show error or spinner that doesn't resolve. App should NOT hang or crash                | No hangs or crashes.<br/><br/>With WiFi Off, adding a photo from iCloud (filesystem) shows a spinner, which quickly resolves into a 'vanilla photo item' (probably should be a photo/strikethrough or similar).  Preview also shows 'vanilla photo item'.  Playback shows nothing for playback_duration.  Turning WiFi back ON will eventually resolve the photo for Preview and Playback (but the thumbail does not auto-resolve and remains vanilla-photo)                                         |
+| IC-5 | Import iCloud items, lose network mid-download | Start import with Wi-Fi on, disable mid-download  | Download should fail gracefully. Items should show error state, not hang indefinitely          | graceful failure -- behaviors consistent with the above in terms of what happens to individual items.  but no hangs.                                                                                                                                                                                                                                                                                                                                                                                 |
+
+### Playback
+
+| #     | Test                                            | Steps                                             | Expected                                                                                                                                | Result                                                                                                                                                                                                       |
+| ----- | ----------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| IC-6  | Play slideshow with iCloud photo                | Slideshow includes an iCloud-only photo           | Photo should download and appear. If slow, should show placeholder (not black/hang). Ken Burns should work once loaded                  | The photo downloads and plays... but if it has not downloaded (e.g. cut Wifi), it simply displays NOTHING for the playback-duration... Might be good to slow a placeholder "Media Not Available" or similar. |
+| IC-7  | Play slideshow with iCloud video                | Slideshow includes an iCloud-only video           | Video should download and play. Audio should work. If slow to download, transition should not freeze (renderer has opacity safety nets) | Video gets added as thumbnail (no spinner).  Hit Play -> nothing happens, it does render... then at some point it finishes downloading and starts rendering.  No freezes.                                    |
+| IC-8  | Play slideshow with iCloud video + Play in Full | Same as IC-7 but with Play in Full ON             | Video should play for its full intrinsic duration after download completes                                                              | Same as IC-7                                                                                                                                                                                                 |
+| IC-9  | Play slideshow — all items iCloud               | Every item is iCloud-only                         | App should eventually play after downloads. Should not hang indefinitely. Ideally shows download progress                               | Same as IC-7                                                                                                                                                                                                 |
+| IC-10 | Play slideshow — iCloud + no network            | Disable Wi-Fi before playing                      | Playback should fail gracefully. Should not hang. Should show some error/feedback                                                       | Same as IC-7                                                                                                                                                                                                 |
+| IC-11 | Play slideshow — iCloud + slow network          | Throttle network (e.g., Network Link Conditioner) | Items should eventually load. Transitions should not freeze while waiting for downloads. Music should keep playing                      | could not test                                                                                                                                                                                               |
+
+### Export
+
+| #     | Test                                        | Steps                                                      | Expected                                                                                    | Result |
+| ----- | ------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------ |
+| IC-12 | Export with iCloud photo                    | Export slideshow containing an iCloud-only photo           | Photo should be downloaded before/during export and included correctly                      |        |
+| IC-13 | Export with iCloud video (Play in Full OFF) | Export with an iCloud-only video, Play in Full OFF         | Video should download, export for slideDuration with audio                                  |        |
+| IC-14 | Export with iCloud video (Play in Full ON)  | Export with an iCloud-only video, Play in Full ON          | Video should download, export for full intrinsic duration with audio                        |        |
+| IC-15 | Export with iCloud video — no network       | Disable Wi-Fi, then export                                 | Export should fail gracefully with error message, not hang. Temp files should be cleaned up |        |
+| IC-16 | Export cancel during iCloud download        | Start export, then cancel while iCloud item is downloading | Export should cancel cleanly. Temp files cleaned up. No orphaned downloads                  |        |
+
+### Face Detection & Thumbnails
+
+| #     | Test                           | Steps                                             | Expected                                                                              | Result                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----- | ------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IC-17 | Face detection on iCloud photo | Import iCloud photo, check if face detection runs | Should download photo, then run face detection. Should not block other items in queue | Face detection works with iCloud photos if they download quickly...  so drag iCloud photo from Photos Library, it gets a thumbnail instantly (no wait), downloads, and when I hit Play I see the correct face detection squares. <br/><br/>However, I add an iCloud photo from iCloud, then cut Wifi before it downloads, the it will not Play (blank)... I then turn Wifi Back on, the photo downloads and plays but without face detection. |
+| IC-18 | Thumbnail for iCloud video     | Import iCloud video, scroll grid                  | Thumbnail should appear after download. Should show placeholder while downloading     | There is no face-detection for Videos -- so this case is equivalnt to previous cases, Video comes in with thumbnail IMMEDIATELY but without a spinner.   Ideally it would eihter show 'blank + spinner' or 'thumbnail + spinner'                                                                                                                                                                                                              |
+
+### Save/Load with iCloud Items
+
+| #     | Test                                   | Steps                                                                                          | Expected                                                                                          | Result |
+| ----- | -------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------ |
+| IC-19 | Save .softburn with iCloud items       | Import iCloud items, save document                                                             | Should save successfully. Security-scoped bookmarks should be created for downloaded content      |        |
+| IC-20 | Load .softburn — items moved to iCloud | Save with local items, then enable "Optimize Mac Storage" so items move to iCloud, then reopen | Items should re-download on open. Face detection cache should still be valid (stored in document) |        |
+
+### Temp File Cleanup
+
+| #     | Test                            | Steps                                                                      | Expected                                                                         | Result |
+| ----- | ------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------ |
+| IC-21 | Temp video files after playback | Play slideshow with iCloud videos, stop, check `/tmp/SoftBurnVideoExport/` | Temp files should be cleaned up after playback ends                              |        |
+| IC-22 | Temp video files after crash    | Force-quit app during iCloud video playback, check temp dir                | Temp files will remain (known issue). Note size/count for cleanup prioritization |        |
