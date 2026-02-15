@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import Combine
 
 extension NSPasteboard.PasteboardType {
     static let softburnMediaID = NSPasteboard.PasteboardType("com.softburn.media-id")
@@ -1102,8 +1103,6 @@ final class MediaThumbnailCellView: NSView {
     private let backgroundView = NSView()
     private let imageContainer = NSView()
     private let imageLayer = CALayer()
-    private let progress = NSProgressIndicator()
-    private let placeholder = NSImageView()
 
     private let durationContainer = NSView()
     private let durationEffect = NSVisualEffectView()
@@ -1113,11 +1112,19 @@ final class MediaThumbnailCellView: NSView {
     private let outerSelectionLayer = CAShapeLayer()
     private let innerSelectionLayer = CAShapeLayer()
 
+    // Unified status badge (centered, circular vibrancy frame)
+    private let statusContainer = NSView()
+    private let statusEffect = NSVisualEffectView()
+    private let statusSpinner = NSProgressIndicator()
+    private let statusIcon = NSImageView()
+
     private var currentID: UUID?
+    private var currentMedia: MediaItem?
     private var currentImagePixelSize: CGSize?
     private var currentImageRect: CGRect = .zero
     private var thumbnailTask: Task<Void, Never>?
     private var durationTask: Task<Void, Never>?
+    private var downloadStateSub: AnyCancellable?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1162,14 +1169,6 @@ final class MediaThumbnailCellView: NSView {
         ]
         imageContainer.layer?.addSublayer(imageLayer)
 
-        placeholder.image = NSImage(systemSymbolName: "photo", accessibilityDescription: nil)
-        placeholder.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 20, weight: .regular)
-        placeholder.contentTintColor = .secondaryLabelColor
-
-        progress.style = .spinning
-        progress.controlSize = .small
-        progress.isDisplayedWhenStopped = false
-
         durationEffect.material = .hudWindow
         durationEffect.blendingMode = .withinWindow
         durationEffect.state = .active
@@ -1183,15 +1182,40 @@ final class MediaThumbnailCellView: NSView {
         durationContainer.wantsLayer = true
         durationContainer.isHidden = true
 
+        // Unified status badge (centered circle with spinner or icon)
+        statusEffect.material = .hudWindow
+        statusEffect.blendingMode = .withinWindow
+        statusEffect.state = .active
+        statusEffect.wantsLayer = true
+        statusEffect.layer?.cornerRadius = 999
+        statusEffect.layer?.masksToBounds = true
+
+        statusSpinner.style = .spinning
+        statusSpinner.controlSize = .small
+        statusSpinner.isDisplayedWhenStopped = false
+        statusSpinner.appearance = NSAppearance(named: .darkAqua)
+
+        statusIcon.imageScaling = .scaleProportionallyDown
+        statusIcon.contentTintColor = .white
+        statusIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        statusIcon.isHidden = true
+
+        statusContainer.wantsLayer = true
+        statusContainer.isHidden = true
+        statusContainer.translatesAutoresizingMaskIntoConstraints = true
+
+        statusContainer.addSubview(statusEffect)
+        statusEffect.addSubview(statusSpinner)
+        statusEffect.addSubview(statusIcon)
+
         selectionOverlay.wantsLayer = true
         selectionOverlay.layer?.backgroundColor = NSColor.clear.cgColor
         selectionOverlay.layer?.masksToBounds = false
 
         addSubview(backgroundView)
         addSubview(imageContainer)
-        addSubview(progress)
-        addSubview(placeholder)
         addSubview(durationContainer)
+        addSubview(statusContainer)
         addSubview(selectionOverlay)
 
         durationContainer.addSubview(durationEffect)
@@ -1216,9 +1240,7 @@ final class MediaThumbnailCellView: NSView {
 
         backgroundView.translatesAutoresizingMaskIntoConstraints = false
         imageContainer.translatesAutoresizingMaskIntoConstraints = false
-        progress.translatesAutoresizingMaskIntoConstraints = false
-        placeholder.translatesAutoresizingMaskIntoConstraints = false
-        // Duration pill is laid out manually (avoid Auto Layout collapsing the container).
+        // Duration pill and status badge are laid out manually.
         durationContainer.translatesAutoresizingMaskIntoConstraints = true
         durationEffect.translatesAutoresizingMaskIntoConstraints = true
         durationLabel.translatesAutoresizingMaskIntoConstraints = true
@@ -1234,14 +1256,6 @@ final class MediaThumbnailCellView: NSView {
             imageContainer.trailingAnchor.constraint(equalTo: trailingAnchor),
             imageContainer.topAnchor.constraint(equalTo: topAnchor),
             imageContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            progress.centerXAnchor.constraint(equalTo: centerXAnchor),
-            progress.centerYAnchor.constraint(equalTo: centerYAnchor),
-
-            placeholder.centerXAnchor.constraint(equalTo: centerXAnchor),
-            placeholder.centerYAnchor.constraint(equalTo: centerYAnchor),
-
-            // Drag icon is positioned manually relative to the aspect-fit image rect.
         ])
 
         NSLayoutConstraint.activate([
@@ -1252,6 +1266,13 @@ final class MediaThumbnailCellView: NSView {
         ])
 
         updateAppearanceColors()
+
+        // Subscribe to download state changes
+        downloadStateSub = DownloadStatePublisher.shared.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                self?.updateDownloadStatus()
+            }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -1270,6 +1291,7 @@ final class MediaThumbnailCellView: NSView {
         layoutImageLayer()
         updateSelectionPaths()
         layoutDurationPill()
+        layoutStatusBadge()
     }
 
     func setSelected(_ isSelected: Bool) {
@@ -1321,6 +1343,83 @@ final class MediaThumbnailCellView: NSView {
         durationEffect.layer?.cornerRadius = pillH / 2
     }
 
+    private func layoutStatusBadge() {
+        guard !statusContainer.isHidden else { return }
+        let badgeSize: CGFloat = 28
+        let anchorRect = currentImageRect.isEmpty ? bounds : currentImageRect
+        let origin = CGPoint(
+            x: anchorRect.midX - badgeSize / 2,
+            y: anchorRect.midY - badgeSize / 2
+        )
+        statusContainer.frame = CGRect(origin: origin, size: CGSize(width: badgeSize, height: badgeSize))
+        statusEffect.frame = statusContainer.bounds
+        statusEffect.layer?.cornerRadius = badgeSize / 2
+        let spinnerSize = statusSpinner.intrinsicContentSize
+        statusSpinner.frame = CGRect(
+            x: (badgeSize - spinnerSize.width) / 2,
+            y: (badgeSize - spinnerSize.height) / 2,
+            width: spinnerSize.width,
+            height: spinnerSize.height
+        )
+        let iconInset: CGFloat = 7
+        statusIcon.frame = statusContainer.bounds.insetBy(dx: iconInset, dy: iconInset)
+    }
+
+    private func showStatusLoading() {
+        statusSpinner.startAnimation(nil)
+        statusSpinner.isHidden = false
+        statusIcon.isHidden = true
+        statusContainer.isHidden = false
+        needsLayout = true
+    }
+
+    private func showStatusError() {
+        statusSpinner.stopAnimation(nil)
+        statusSpinner.isHidden = true
+        statusIcon.image = NSImage(systemSymbolName: "icloud.slash.fill", accessibilityDescription: "Unavailable")
+        statusIcon.isHidden = false
+        statusContainer.isHidden = false
+        needsLayout = true
+    }
+
+    private func hideStatus() {
+        statusSpinner.stopAnimation(nil)
+        statusContainer.isHidden = true
+    }
+
+    /// Called by Combine when DownloadStatePublisher changes.
+    /// Only acts when the item has a download state (Photos Library items).
+    private func updateDownloadStatus() {
+        guard let id = currentID else { return }
+        guard let state = DownloadStatePublisher.shared.states[id] else { return }
+        switch state {
+        case .downloading:
+            showStatusLoading()
+        case .unavailable:
+            showStatusError()
+        case .ready:
+            hideStatus()
+            // Refresh thumbnail with full-res version
+            guard let media = currentMedia else { return }
+            thumbnailTask?.cancel()
+            thumbnailTask = Task { [weak self] in
+                await ThumbnailCache.shared.invalidate(for: media)
+                let thumb = await ThumbnailCache.shared.thumbnail(for: media)
+                await MainActor.run { [weak self] in
+                    guard let self, self.currentID == id else { return }
+                    if let thumb, let cg = thumb.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                        self.currentImagePixelSize = CGSize(width: cg.width, height: cg.height)
+                        CATransaction.begin()
+                        CATransaction.setDisableActions(true)
+                        self.imageLayer.contents = cg
+                        CATransaction.commit()
+                        self.needsLayout = true
+                    }
+                }
+            }
+        }
+    }
+
     private func layoutImageLayer() {
         let container = bounds
         CATransaction.begin()
@@ -1346,6 +1445,7 @@ final class MediaThumbnailCellView: NSView {
         // Ensure placeholder state is cleared.
         setPlaceholderUI(isPlaceholder: false)
         currentID = media.id
+        currentMedia = media
 
         // Reset UI
         CATransaction.begin()
@@ -1353,10 +1453,11 @@ final class MediaThumbnailCellView: NSView {
         imageLayer.contents = nil
         CATransaction.commit()
         currentImagePixelSize = nil
-        progress.startAnimation(nil)
-        placeholder.isHidden = true
         durationContainer.isHidden = true
         durationLabel.stringValue = ""
+
+        // Show loading spinner (unified for FS and Photos Library)
+        showStatusLoading()
 
         thumbnailTask?.cancel()
         durationTask?.cancel()
@@ -1367,22 +1468,30 @@ final class MediaThumbnailCellView: NSView {
             let thumb = await ThumbnailCache.shared.thumbnail(for: media)
             await MainActor.run { [weak self] in
                 guard let self, self.currentID == id else { return }
-                self.progress.stopAnimation(nil)
                 if let thumb, let cg = thumb.cgImage(forProposedRect: nil, context: nil, hints: nil) {
                     self.currentImagePixelSize = CGSize(width: cg.width, height: cg.height)
                     CATransaction.begin()
                     CATransaction.setDisableActions(true)
                     self.imageLayer.contents = cg
                     CATransaction.commit()
-                    self.placeholder.isHidden = true
                     self.needsLayout = true
+                    // If a download state is active, let it control the badge
+                    let dlState = DownloadStatePublisher.shared.states[id]
+                    if dlState == .downloading {
+                        self.showStatusLoading()
+                    } else if dlState == .unavailable {
+                        self.showStatusError()
+                    } else {
+                        self.hideStatus()
+                    }
                 } else {
+                    // Thumbnail failed to load
                     CATransaction.begin()
                     CATransaction.setDisableActions(true)
                     self.imageLayer.contents = nil
                     CATransaction.commit()
                     self.currentImagePixelSize = nil
-                    self.placeholder.isHidden = false
+                    self.showStatusError()
                     self.needsLayout = true
                 }
             }
@@ -1410,7 +1519,9 @@ final class MediaThumbnailCellView: NSView {
         thumbnailTask?.cancel()
         durationTask?.cancel()
         currentID = nil
+        currentMedia = nil
         currentImagePixelSize = nil
+        hideStatus()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         imageLayer.contents = nil
@@ -1421,9 +1532,8 @@ final class MediaThumbnailCellView: NSView {
     private func setPlaceholderUI(isPlaceholder: Bool) {
         backgroundView.isHidden = isPlaceholder
         imageContainer.isHidden = isPlaceholder
-        progress.isHidden = isPlaceholder
-        placeholder.isHidden = true
         durationContainer.isHidden = true
+        statusContainer.isHidden = true
         outerSelectionLayer.isHidden = true
         innerSelectionLayer.isHidden = true
         if isPlaceholder {
@@ -1432,7 +1542,7 @@ final class MediaThumbnailCellView: NSView {
             imageLayer.contents = nil
             CATransaction.commit()
             currentImagePixelSize = nil
-            progress.stopAnimation(nil)
+            statusSpinner.stopAnimation(nil)
         }
         needsLayout = true
     }

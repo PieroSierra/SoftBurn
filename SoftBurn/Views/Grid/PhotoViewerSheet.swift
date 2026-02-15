@@ -26,8 +26,15 @@ struct PhotoViewerSheet: View {
     @State private var scale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var keyMonitor: Any?
+    @ObservedObject private var downloadPublisher = DownloadStatePublisher.shared
 
     private let loader = ViewerImageLoader()
+
+    /// Current item's download state from the publisher
+    private var downloadState: DownloadState? {
+        guard let item = currentItem else { return nil }
+        return downloadPublisher.states[item.id]
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -58,6 +65,12 @@ struct PhotoViewerSheet: View {
             clampIndexOrDismiss()
             Task { await loadCurrentMedia() }
         }
+        // Reload media when download completes
+        .onChange(of: downloadState) { _, newState in
+            if newState == .ready {
+                Task { await loadCurrentMedia() }
+            }
+        }
     }
 
     @ViewBuilder
@@ -79,8 +92,7 @@ struct PhotoViewerSheet: View {
 
         ZStack {
             if isLoading, image == nil, player == nil {
-                ProgressView()
-                    .tint(.white)
+                loadingPlaceholder
             } else if let image {
                 ZoomableImage(
                     image: image,
@@ -94,12 +106,18 @@ struct PhotoViewerSheet: View {
                         player.play()
                     }
             } else {
-                Image(systemName: "photo")
-                    .foregroundColor(.white.opacity(0.7))
+                // Loading finished with no content — unified error state for FS and iCloud
+                mediaUnavailablePlaceholder
             }
         }
         .frame(width: size.width, height: size.height)
-        .background(.ultraThinMaterial.opacity(0.0)) // keep layout stable without showing a "card" color
+        .background {
+            // Show a dark card frame when no content is loaded (placeholder/spinner states)
+            if image == nil, player == nil {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color(white: 0.15))
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .shadow(color: Color.black.opacity(0.35), radius: 22, x: 0, y: 12)
         .overlay(alignment: .topLeading) {
@@ -386,6 +404,34 @@ struct PhotoViewerSheet: View {
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
             self.endObserver = nil
+        }
+    }
+
+    // MARK: - iCloud Download State
+
+    @ViewBuilder
+    private var loadingPlaceholder: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.regular)
+            if downloadState == .downloading {
+                Text("Downloading from iCloud...")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+            }
+        }
+        .environment(\.colorScheme, .dark)
+    }
+
+    @ViewBuilder
+    private var mediaUnavailablePlaceholder: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "icloud.slash.fill")
+                .font(.system(size: 36, weight: .light))
+                .foregroundColor(.white.opacity(0.7))
+            Text("iCloud download unavailable")
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.7))
         }
     }
 

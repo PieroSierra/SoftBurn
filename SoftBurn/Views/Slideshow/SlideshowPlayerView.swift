@@ -175,6 +175,10 @@ class SlideshowPlayerState: ObservableObject {
     /// Whether the next video is ready to play (always true for photos)
     @Published var nextVideoReady: Bool = true
 
+    /// True when the current/next photo is an iCloud placeholder (image unavailable)
+    @Published var currentIsPlaceholder: Bool = false
+    @Published var nextIsPlaceholder: Bool = false
+
     private let imageLoader = PlaybackImageLoader()
     private var animationTimer: Timer?
     private var isRunning = false
@@ -261,6 +265,8 @@ class SlideshowPlayerState: ObservableObject {
         nextStartOffset = .zero
         didStartNextVideoThisCycle = false
         nextVideoReady = true
+        currentIsPlaceholder = false
+        nextIsPlaceholder = false
 
         // Drain the video player pool
         Task {
@@ -319,11 +325,13 @@ class SlideshowPlayerState: ObservableObject {
         currentStartOffset = Self.startOffset(for: transitionStyle)
         nextStartOffset = Self.startOffset(for: transitionStyle)
 
-        // Reset face/camera targets by default.
+        // Reset face/camera targets and placeholder flags by default.
         currentFaceBoxes = []
         nextFaceBoxes = []
         currentEndOffset = .zero
         nextEndOffset = .zero
+        currentIsPlaceholder = false
+        nextIsPlaceholder = false
 
         // Load current
         switch currentItem.kind {
@@ -336,6 +344,7 @@ class SlideshowPlayerState: ObservableObject {
                 currentImage = image
             } else {
                 currentImage = nil
+                if currentItem.isFromPhotosLibrary { currentIsPlaceholder = true }
             }
 
             let faces = await FaceDetectionCache.shared.cachedFaces(for: currentItem) ?? []
@@ -354,7 +363,9 @@ class SlideshowPlayerState: ObservableObject {
             nextVideo?.invalidate()
             nextVideo = nil
             // Use MediaItem-based method to support both filesystem and Photos Library
-            nextImage = await imageLoader.loadImage(for: nextItem)
+            let nextImg = await imageLoader.loadImage(for: nextItem)
+            nextImage = nextImg
+            if nextImg == nil && nextItem.isFromPhotosLibrary { nextIsPlaceholder = true }
 
             let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem) ?? []
             let rotatedFaces = Self.rotateVisionRects(faces, degrees: nextItem.rotationDegrees)
@@ -507,6 +518,7 @@ class SlideshowPlayerState: ObservableObject {
         // Promote all "next" properties to "current"
         currentKind = nextKind
         currentImage = nextImage
+        currentIsPlaceholder = nextIsPlaceholder
         if currentVideo !== nextVideo {
             currentVideo?.invalidate()
         }
@@ -539,6 +551,7 @@ class SlideshowPlayerState: ObservableObject {
         nextEndOffset = .zero
         nextStartOffset = .zero
         nextKind = .photo
+        nextIsPlaceholder = false
 
         // Use pre-computed nextHoldDuration for immediate timing accuracy
         currentHoldDuration = nextHoldDuration
@@ -570,8 +583,10 @@ class SlideshowPlayerState: ObservableObject {
         case .photo:
             nextVideo?.invalidate()
             nextVideo = nil
-            nextImage = await imageLoader.loadImage(for: nextItem)
+            let nextImg = await imageLoader.loadImage(for: nextItem)
             guard !isStopped else { return }
+            nextImage = nextImg
+            nextIsPlaceholder = (nextImg == nil && nextItem.isFromPhotosLibrary)
 
             let faces = await FaceDetectionCache.shared.cachedFaces(for: nextItem) ?? []
             guard !isStopped else { return }

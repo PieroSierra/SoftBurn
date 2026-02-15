@@ -13,18 +13,19 @@ struct ThumbnailView: View {
     let photo: MediaItem
     let isSelected: Bool
     let onTap: () -> Void
-    
+
     @State private var thumbnail: NSImage?
     @State private var isLoading = true
     @State private var videoDurationText: String?
-    
+    @ObservedObject private var downloadPublisher = DownloadStatePublisher.shared
+
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color(NSColor.textBackgroundColor))
                     .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
-                
+
                 if let thumbnail = thumbnail {
                     Image(nsImage: thumbnail)
                         .resizable()
@@ -37,7 +38,8 @@ struct ThumbnailView: View {
                         .scaleEffect(0.5)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 } else {
-                    Image(systemName: "photo")
+                    Image(systemName: "icloud.slash.fill")
+                        .font(.system(size: 24))
                         .foregroundColor(.secondary)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
@@ -53,7 +55,20 @@ struct ThumbnailView: View {
                         .padding(8)
                         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottomTrailing)
                 }
-                
+
+                // iCloud download state overlay (bottom-left)
+                if let state = downloadPublisher.states[photo.id], state != .ready {
+                    Image(systemName: state == .downloading
+                          ? "icloud.and.arrow.down"
+                          : "icloud.slash.fill")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(5)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .padding(6)
+                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottomLeading)
+                }
+
                 // Selection outline
                 if isSelected {
                     RoundedRectangle(cornerRadius: 8)
@@ -72,29 +87,42 @@ struct ThumbnailView: View {
         .onChange(of: photo.rotationDegrees) { _, _ in
             Task { await loadThumbnail() }
         }
+        // Refresh thumbnail when download completes (state transitions to .ready)
+        .onChange(of: downloadPublisher.states[photo.id]) { _, newState in
+            if newState == .ready {
+                Task {
+                    await ThumbnailCache.shared.invalidate(for: photo)
+                    await loadThumbnail()
+                }
+            }
+        }
     }
-    
+
     /// The current thumbnail image (exposed for drag preview)
     var currentThumbnail: NSImage? {
         thumbnail
     }
-    
+
     private func loadThumbnail() async {
         isLoading = true
         defer { isLoading = false }
-        
-        // Check if file exists before loading
-        guard FileManager.default.fileExists(atPath: photo.url.path) else {
-            return
+
+        // Use MediaItem-based method for both filesystem and Photos Library
+        if photo.isFromPhotosLibrary {
+            thumbnail = await ThumbnailCache.shared.thumbnail(for: photo)
+        } else {
+            // Filesystem: check file exists first
+            guard FileManager.default.fileExists(atPath: photo.url.path) else {
+                return
+            }
+            thumbnail = await ThumbnailCache.shared.thumbnail(for: photo.url, rotationDegrees: photo.rotationDegrees)
         }
-        
-        thumbnail = await ThumbnailCache.shared.thumbnail(for: photo.url, rotationDegrees: photo.rotationDegrees)
 
         if photo.kind == .video {
-            videoDurationText = await VideoMetadataCache.shared.durationString(for: photo.url)
+            videoDurationText = await VideoMetadataCache.shared.durationString(for: photo)
         } else {
             videoDurationText = nil
         }
     }
-}
 
+}
