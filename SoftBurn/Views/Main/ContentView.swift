@@ -1132,24 +1132,83 @@ struct ContentView: View {
 
     // MARK: - Rename to Sequence
 
-    /// Executes the rename operation for all renameable candidates in playback order.
-    /// On failure, halts at the first error and sets renameError to display the alert.
-    /// Partial renames are kept — this operation is intentionally non-atomic.
+    /// Entry point: filters to renameable items and starts the rename loop.
     @MainActor
     private func executeRename(candidates: [RenamePreviewItem]) {
-        for item in candidates where item.isRenameable {
-            guard let newURL = item.newURL else { continue }
+        executeRenameAt(items: candidates.filter(\.isRenameable), index: 0, retried: false)
+    }
+
+    /// Iterates renameable items from `index`. On a sandbox permission error, opens an
+    /// NSOpenPanel to acquire folder access (once per folder), then resumes. Any other
+    /// error halts and surfaces an alert. Partial renames are kept — intentionally non-atomic.
+    @MainActor
+    private func executeRenameAt(items: [RenamePreviewItem], index: Int, retried: Bool) {
+        var i = index
+        while i < items.count {
+            let item = items[i]
+            guard let newURL = item.newURL else { i += 1; continue }
             let oldURL = item.currentURL
             _ = oldURL.startAccessingSecurityScopedResource()
             do {
                 try FileManager.default.moveItem(at: oldURL, to: newURL)
                 slideshowState.updateFilesystemURL(id: item.id, newURL: newURL)
                 oldURL.stopAccessingSecurityScopedResource()
-            } catch {
+                i += 1
+            } catch let nsError as NSError {
                 oldURL.stopAccessingSecurityScopedResource()
-                renameError = "Could not rename \"\(item.currentFilename)\": \(error.localizedDescription)"
-                break
+                // On a sandbox permission error (first attempt only), ask the user to
+                // grant folder access via an open panel, then resume from this item.
+                if isRenameSandboxError(nsError) && !retried {
+                    let folderURL = oldURL.deletingLastPathComponent()
+                    let resumeIndex = i
+                    requestFolderAccessForRename(folder: folderURL) { [self] userSelected in
+                        if userSelected {
+                            executeRenameAt(items: items, index: resumeIndex, retried: true)
+                        } else {
+                            renameError = "Access to \"\(folderURL.lastPathComponent)\" was not granted. Rename stopped."
+                        }
+                    }
+                    return
+                }
+                renameError = "Could not rename \"\(item.currentFilename)\": \(nsError.localizedDescription)"
+                return
             }
+        }
+    }
+
+    /// Returns true when the error is a sandbox write-permission denial.
+    private func isRenameSandboxError(_ error: NSError) -> Bool {
+        if error.domain == NSCocoaErrorDomain,
+           error.code == NSFileWriteNoPermissionError || error.code == NSFileReadNoPermissionError {
+            return true
+        }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError,
+           underlying.domain == NSPOSIXErrorDomain,
+           underlying.code == Int(EACCES) || underlying.code == Int(EPERM) {
+            return true
+        }
+        return false
+    }
+
+    /// Opens an NSOpenPanel pre-positioned at `folder`'s parent so the user can select
+    /// the folder to grant security-scoped write access. Calls `completion` on the main actor
+    /// with `true` if the user selected a folder (access started), `false` if cancelled.
+    private func requestFolderAccessForRename(folder folderURL: URL, completion: @escaping @MainActor (Bool) -> Void) {
+        let panel = NSOpenPanel()
+        panel.message = "SoftBurn needs write access to \"\(folderURL.lastPathComponent)\" to rename files.\nSelect the folder below, then click Open."
+        panel.prompt = "Open"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = folderURL.deletingLastPathComponent()
+        panel.begin { response in
+            guard response == .OK, let selectedURL = panel.url else {
+                Task { @MainActor in completion(false) }
+                return
+            }
+            _ = selectedURL.startAccessingSecurityScopedResource()
+            Task { @MainActor in completion(true) }
         }
     }
 
