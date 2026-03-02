@@ -1167,23 +1167,46 @@ struct ContentView: View {
             // Uses MediaItem-based method to support both filesystem and Photos Library items.
             let faceRects = await FaceDetectionCache.shared.snapshotFaceRects(for: photos.filter { $0.kind == .photo })
 
-            // Create security-scoped bookmarks for each photo so we can reopen across app launches.
-            // This is best-effort; missing bookmarks just mean we may need the user to re-select those files later.
-            let photoURLs = photos.map(\.url)
-            let bookmarksByPath: [String: String] = await Task.detached(priority: .utility) {
-                var result: [String: String] = [:]
-                for url in photoURLs {
-                    // Bookmark creation does NOT prompt; it only succeeds if we already have access.
-                    if let data = try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) {
-                        result[url.path] = data.base64EncodedString()
+            // Create security-scoped bookmarks for each photo and its parent folder.
+            // Folder bookmarks enable rename operations (FileManager.moveItem needs parent-folder
+            // write access) across app launches. Both are best-effort: missing bookmarks just mean
+            // we may need the user to re-select those files/folders later.
+            let photoURLs = photos.compactMap { item -> URL? in
+                guard case .filesystem = item.source else { return nil }
+                return item.url
+            }
+            let (bookmarksByPath, folderBookmarksByPath): ([String: String], [String: String]) =
+                await Task.detached(priority: .utility) {
+                    var files: [String: String] = [:]
+                    var folders: [String: String] = [:]
+                    var seenFolders = Set<String>()
+                    for url in photoURLs {
+                        if let data = try? url.bookmarkData(
+                            options: [.withSecurityScope],
+                            includingResourceValuesForKeys: nil,
+                            relativeTo: nil
+                        ) {
+                            files[url.path] = data.base64EncodedString()
+                        }
+                        let folderURL = url.deletingLastPathComponent()
+                        let folderPath = folderURL.path
+                        guard !seenFolders.contains(folderPath) else { continue }
+                        seenFolders.insert(folderPath)
+                        if let data = try? folderURL.bookmarkData(
+                            options: [.withSecurityScope],
+                            includingResourceValuesForKeys: nil,
+                            relativeTo: nil
+                        ) {
+                            folders[folderPath] = data.base64EncodedString()
+                        }
                     }
-                }
-                return result
-            }.value
+                    return (files, folders)
+                }.value
 
             var fileDoc = SlideshowFileDocument(photos: photos, settings: docSettings)
             fileDoc.document.faceRectsByPath = faceRects.isEmpty ? nil : faceRects
             fileDoc.document.bookmarksByPath = bookmarksByPath.isEmpty ? nil : bookmarksByPath
+            fileDoc.document.folderBookmarksByPath = folderBookmarksByPath.isEmpty ? nil : folderBookmarksByPath
             exportDocument = fileDoc
 
             isSaving = true

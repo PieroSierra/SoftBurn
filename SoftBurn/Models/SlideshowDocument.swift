@@ -26,6 +26,10 @@ struct SlideshowDocument: Codable {
     /// Required for sandboxed access across app launches.
     var bookmarksByPath: [String: String]?
 
+    /// Security-scoped bookmarks per parent-folder path (base64-encoded).
+    /// Resolved on load to grant write access to containing folders, enabling rename operations.
+    var folderBookmarksByPath: [String: String]?
+
     /// Persisted face rectangles per photo path (normalized, Vision coordinate space).
     /// Keyed by the same path strings used in `photoPaths`.
     /// - Note: Missing entries mean "unknown" (may be detected later and saved on next save).
@@ -369,6 +373,24 @@ struct SlideshowDocument: Codable {
                 // This placeholder creates the MediaItem structure, but asset verification
                 // must be done separately via PhotosLibraryManager.resolveAssets()
                 items.append(MediaItem(photosLibraryLocalIdentifier: localID, cloudIdentifier: cloudID, kind: entry.kind))
+            }
+        }
+
+        // Activate security-scoped access for parent folders so that rename operations
+        // (FileManager.moveItem) can write to those directories across app launches.
+        // Access is intentionally not stopped — it remains active for the app session.
+        if let folderBookmarks = folderBookmarksByPath {
+            for (_, bookmarkString) in folderBookmarks {
+                guard let bookmarkData = Data(base64Encoded: bookmarkString) else { continue }
+                var isStale = false
+                if let folderURL = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: [.withSecurityScope],
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    _ = folderURL.startAccessingSecurityScopedResource()
+                }
             }
         }
 
