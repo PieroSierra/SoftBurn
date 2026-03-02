@@ -102,6 +102,77 @@ struct RenameToSequenceView: View {
     }
 }
 
+// MARK: - Preview
+
+#Preview {
+    let items: [RenamePreviewItem] = [
+        RenamePreviewItem(
+            id: UUID(), playbackIndex: 1,
+            parentFolderDisplayName: "Lake Como",
+            currentFilename: "IMG_0674.jpeg",
+            newFilename: "0001-IMG_0674.jpeg",
+            currentURL: URL(fileURLWithPath: "/Pictures/Lake Como/IMG_0674.jpeg"),
+            newURL:     URL(fileURLWithPath: "/Pictures/Lake Como/0001-IMG_0674.jpeg"),
+            isPhotosLibrary: false
+        ),
+        RenamePreviewItem(
+            id: UUID(), playbackIndex: 2,
+            parentFolderDisplayName: "Lake Como",
+            currentFilename: "IMG_0675.HEIC",
+            newFilename: "0002-IMG_0675.HEIC",
+            currentURL: URL(fileURLWithPath: "/Pictures/Lake Como/IMG_0675.HEIC"),
+            newURL:     URL(fileURLWithPath: "/Pictures/Lake Como/0002-IMG_0675.HEIC"),
+            isPhotosLibrary: false
+        ),
+        RenamePreviewItem(
+            id: UUID(), playbackIndex: 3,
+            parentFolderDisplayName: "Photos Library",
+            currentFilename: "Sunset at Varenna",
+            newFilename: nil,
+            currentURL: URL(string: "photos://localID-abc123")!,
+            newURL: nil,
+            isPhotosLibrary: true
+        ),
+        RenamePreviewItem(
+            id: UUID(), playbackIndex: 4,
+            parentFolderDisplayName: "Paris 2024",
+            currentFilename: "DSC_1892.NEF",
+            newFilename: "0001-DSC_1892.NEF",
+            currentURL: URL(fileURLWithPath: "/Pictures/Paris 2024/DSC_1892.NEF"),
+            newURL:     URL(fileURLWithPath: "/Pictures/Paris 2024/0001-DSC_1892.NEF"),
+            isPhotosLibrary: false
+        ),
+        RenamePreviewItem(
+            id: UUID(), playbackIndex: 5,
+            parentFolderDisplayName: "Lake Como",
+            currentFilename: "VID_2048.mov",
+            newFilename: "0003-VID_2048.mov",
+            currentURL: URL(fileURLWithPath: "/Pictures/Lake Como/VID_2048.mov"),
+            newURL:     URL(fileURLWithPath: "/Pictures/Lake Como/0003-VID_2048.mov"),
+            isPhotosLibrary: false
+        ),
+        RenamePreviewItem(
+            id: UUID(), playbackIndex: 6,
+            parentFolderDisplayName: "Photos Library",
+            currentFilename: "Morning coffee",
+            newFilename: nil,
+            currentURL: URL(string: "photos://localID-def456")!,
+            newURL: nil,
+            isPhotosLibrary: true
+        ),
+        RenamePreviewItem(
+            id: UUID(), playbackIndex: 7,
+            parentFolderDisplayName: "Paris 2024",
+            currentFilename: "IMG_8811.HEIC",
+            newFilename: "0002-IMG_8811.HEIC",
+            currentURL: URL(fileURLWithPath: "/Pictures/Paris 2024/IMG_8811.HEIC"),
+            newURL:     URL(fileURLWithPath: "/Pictures/Paris 2024/0002-IMG_8811.HEIC"),
+            isPhotosLibrary: false
+        ),
+    ]
+    RenameToSequenceView(items: items, onConfirm: {}, onDismiss: {})
+}
+
 // MARK: - Row View
 
 private struct RenamePreviewRow: View {
