@@ -42,6 +42,15 @@ struct MediaItem: Identifiable, Hashable, Codable, Sendable {
         self.rotationDegrees = 0 // Photos Library handles EXIF rotation
     }
 
+    /// Internal init used to produce a copy with an updated source while preserving all other fields.
+    /// Used by withFilesystemURL(_:) to work around the immutability of `source`.
+    internal init(existingID: UUID, source: Source, kind: Kind, rotationDegrees: Int) {
+        self.id = existingID
+        self.source = source
+        self.kind = kind
+        self.rotationDegrees = rotationDegrees
+    }
+
     /// Backward-compatible URL property (returns synthetic URL for Photos Library items)
     var url: URL {
         switch source {
@@ -105,6 +114,19 @@ extension MediaItem {
     mutating func rotateCounterclockwise90() {
         guard kind == .photo else { return }
         rotationDegrees = MediaItem.normalizedRotationDegrees(rotationDegrees + 90)
+    }
+
+    /// Returns a copy of this item with the filesystem URL replaced.
+    /// All other fields (id, kind, rotationDegrees) are preserved.
+    /// Only valid to call on filesystem items; silently returns self unchanged for Photos Library items.
+    func withFilesystemURL(_ url: URL) -> MediaItem {
+        guard case .filesystem = source else { return self }
+        return MediaItem(
+            existingID: id,
+            source: .filesystem(url),
+            kind: kind,
+            rotationDegrees: rotationDegrees
+        )
     }
 }
 

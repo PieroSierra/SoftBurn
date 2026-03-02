@@ -90,6 +90,15 @@ class SlideshowState: ObservableObject {
         }
     }
 
+    /// Updates the filesystem URL for a media item after a successful rename.
+    /// Silently ignores the call if the item is not found or is not a filesystem item.
+    func updateFilesystemURL(id: UUID, newURL: URL) {
+        guard let idx = photos.firstIndex(where: { $0.id == id }) else { return }
+        guard case .filesystem = photos[idx].source else { return }
+        photos[idx] = photos[idx].withFilesystemURL(newURL)
+        AppSessionState.shared.markDirty()
+    }
+
     /// Rotate a single photo 90° counterclockwise (non-destructive metadata only).
     /// Videos are not rotatable; calls for videos are ignored.
     func rotatePhotoCounterclockwise(withID id: UUID) {

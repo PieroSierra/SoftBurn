@@ -220,8 +220,15 @@ struct ContentView: View {
                         }
                         .disabled(slideshowState.isEmpty)
 
+                        Button(action: {
+                            renamePreviewData = RenamePreviewData(items: SequenceRenamer.buildPreview(for: slideshowState.photos))
+                        }) {
+                            Label("Rename Files to Sequence...", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(slideshowState.photos.allSatisfy { $0.isFromPhotosLibrary } || slideshowState.isEmpty)
+
                         Divider()
-                        
+
                         Menu {
                             Button(action: {
                                 handleExport(preset: .hd1080p)
@@ -562,6 +569,29 @@ struct ContentView: View {
                 }
             )
         }
+        // Rename to sequence: preview sheet (full dialog — replaces the temporary confirmation below)
+        .sheet(item: $renamePreviewData) { data in
+            RenameToSequenceView(
+                items: data.items,
+                onConfirm: {
+                    let captured = data.items
+                    renamePreviewData = nil
+                    executeRename(candidates: captured)
+                },
+                onDismiss: {
+                    renamePreviewData = nil
+                }
+            )
+        }
+        // Rename failed alert
+        .alert("Rename Failed", isPresented: Binding(
+            get: { renameError != nil },
+            set: { if !$0 { renameError = nil } }
+        )) {
+            Button("OK", role: .cancel) { renameError = nil }
+        } message: {
+            Text(renameError ?? "")
+        }
     }
     
     // MARK: - Slideshow Window
@@ -736,6 +766,13 @@ struct ContentView: View {
                         Label("Save Slideshow...", systemImage: "square.and.arrow.down")
                     }
                     .disabled(slideshowState.isEmpty)
+
+                    Button(action: {
+                        renamePreviewData = RenamePreviewData(items: SequenceRenamer.buildPreview(for: slideshowState.photos))
+                    }) {
+                        Label("Rename Files to Sequence...", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .disabled(slideshowState.photos.allSatisfy { $0.isFromPhotosLibrary } || slideshowState.isEmpty)
 
                     Divider()
 
@@ -927,8 +964,13 @@ struct ContentView: View {
     }
     
     // MARK: - Selection Handling
-    
+
     @State private var lastSelectedIndex: Int?
+
+    // MARK: - Rename to Sequence
+
+    @State private var renamePreviewData: RenamePreviewData?
+    @State private var renameError: String?
 
     // MARK: - Viewer
 
@@ -1085,6 +1127,29 @@ struct ContentView: View {
                 await iCloudDownloadManager.shared.trackItem(item)
             }
             await FaceDetectionCache.shared.prefetch(items: items)
+        }
+    }
+
+    // MARK: - Rename to Sequence
+
+    /// Executes the rename operation for all renameable candidates in playback order.
+    /// On failure, halts at the first error and sets renameError to display the alert.
+    /// Partial renames are kept — this operation is intentionally non-atomic.
+    @MainActor
+    private func executeRename(candidates: [RenamePreviewItem]) {
+        for item in candidates where item.isRenameable {
+            guard let newURL = item.newURL else { continue }
+            let oldURL = item.currentURL
+            _ = oldURL.startAccessingSecurityScopedResource()
+            do {
+                try FileManager.default.moveItem(at: oldURL, to: newURL)
+                slideshowState.updateFilesystemURL(id: item.id, newURL: newURL)
+                oldURL.stopAccessingSecurityScopedResource()
+            } catch {
+                oldURL.stopAccessingSecurityScopedResource()
+                renameError = "Could not rename \"\(item.currentFilename)\": \(error.localizedDescription)"
+                break
+            }
         }
     }
 
