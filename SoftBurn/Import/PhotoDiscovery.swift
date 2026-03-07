@@ -45,9 +45,11 @@ enum PhotoDiscovery {
             }
         }
         
-        return items
+        return items.sorted {
+            $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending
+        }
     }
-    
+
     /// Discover media from multiple URLs synchronously
     private static func discoverMediaSync(from urls: [URL]) -> [MediaItem] {
         var allItems: [MediaItem] = []
