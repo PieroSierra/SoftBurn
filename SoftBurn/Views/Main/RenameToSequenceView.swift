@@ -32,7 +32,7 @@ struct RenameToSequenceView: View {
                 VStack (alignment: .leading) {
                     Text("Rename Files to Sequence")
                         .font(.headline)
-                    Text("Files will be renamed in slideshow order, numbered separately within each folder, starting from 0001 within each folder. ")
+                    Text("Files will be renamed in slideshow order, numbered separately within each folder, starting from 0001. ")
                 }
                 Spacer()
             }

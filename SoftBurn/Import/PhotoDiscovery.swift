@@ -13,10 +13,10 @@ enum PhotoDiscovery {
     private static func discoverMediaSync(in url: URL) -> [MediaItem] {
         var items: [MediaItem] = []
         
-        guard url.startAccessingSecurityScopedResource() else {
-            return items
-        }
-        defer { url.stopAccessingSecurityScopedResource() }
+        // startAccessingSecurityScopedResource returns false for non-scoped URLs (e.g. drag-and-drop),
+        // which means "not security-scoped, access directly." Only call stop if we started access.
+        let didStartAccess = url.startAccessingSecurityScopedResource()
+        defer { if didStartAccess { url.stopAccessingSecurityScopedResource() } }
         
         guard let enumerator = FileManager.default.enumerator(
             at: url,
