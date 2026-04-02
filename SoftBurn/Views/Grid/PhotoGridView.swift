@@ -23,6 +23,7 @@ struct PhotoGridView: View {
     let onReorderToIndex: ([UUID], Int) -> Void // sourceIDs (all selected), destination insertion index
     let onDragStart: (UUID) -> Void // Called when drag starts to select the item
     let onDeselectAll: () -> Void // Called when clicking on whitespace
+    var onOpenSlideshow: ((URL) -> Void)? = nil
 
     var body: some View {
         MediaGridCollectionView(
@@ -39,7 +40,8 @@ struct PhotoGridView: View {
             onPhotosDropAuthorizationDenied: onPhotosDropAuthorizationDenied,
             onReorderToIndex: onReorderToIndex,
             onDragStart: onDragStart,
-            onDeselectAll: onDeselectAll
+            onDeselectAll: onDeselectAll,
+            onOpenSlideshow: onOpenSlideshow
         )
     }
 }

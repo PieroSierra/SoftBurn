@@ -65,6 +65,8 @@ struct ContentView: View {
     @State private var showOpenWarning = false
     @State private var showSettings = false
     @State private var pendingOpenURL: URL?
+    /// true when pendingOpenURL arrived via drag-drop and its security scope is still active.
+    @State private var pendingOpenURLScopeActive = false
     @State private var isPlayingSlideshow = false
     @State private var slideshowStartingPhotoID: UUID?
     @State private var isShowingViewer = false
@@ -117,6 +119,17 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .clearRecentList)) { _ in
                 recentsManager.clearAll()
+            }
+            .onAppear {
+                if let url = session.pendingFileOpenURL {
+                    session.pendingFileOpenURL = nil
+                    handleOpenSlideshowFromURL(url)
+                }
+            }
+            .onChange(of: session.pendingFileOpenURL) { _ in
+                guard let url = session.pendingFileOpenURL else { return }
+                session.pendingFileOpenURL = nil
+                handleOpenSlideshowFromURL(url)
             }
     }
 
@@ -411,13 +424,17 @@ struct ContentView: View {
         // Warning dialog when opening with existing photos
         .alert("Replace Current Slideshow?", isPresented: $showOpenWarning) {
             Button("Cancel", role: .cancel) {
+                if pendingOpenURLScopeActive { pendingOpenURL?.stopAccessingSecurityScopedResource() }
                 pendingOpenURL = nil
+                pendingOpenURLScopeActive = false
             }
             Button("Replace", role: .destructive) {
                 if let url = pendingOpenURL {
                     loadSlideshow(from: url)
-                    pendingOpenURL = nil
+                    if pendingOpenURLScopeActive { url.stopAccessingSecurityScopedResource() }
                 }
+                pendingOpenURL = nil
+                pendingOpenURLScopeActive = false
             }
         } message: {
             Text("Opening a slideshow will replace the \(slideshowState.photoCount) photos currently in your slideshow.")
@@ -676,6 +693,9 @@ struct ContentView: View {
                 },
                 onPhotosDropAuthorizationDenied: {
                     showPhotosDropAuthDeniedAlert = true
+                },
+                onOpenSlideshow: { url in
+                    handleOpenSlideshowFromURL(url, scopeActive: true)
                 }
             )
         } else {
@@ -721,6 +741,9 @@ struct ContentView: View {
                 },
                 onDeselectAll: {
                     slideshowState.deselectAll()
+                },
+                onOpenSlideshow: { url in
+                    handleOpenSlideshowFromURL(url, scopeActive: true)
                 }
             )
         }
@@ -1023,6 +1046,21 @@ struct ContentView: View {
         }
     }
 
+    /// Handles a .softburn URL arriving via double-click or drag-drop.
+    /// If empty: load immediately. If non-empty: show the "replace?" warning first.
+    /// `scopeActive` is true when the caller already called startAccessingSecurityScopedResource;
+    /// ContentView is then responsible for the matching stop call.
+    private func handleOpenSlideshowFromURL(_ url: URL, scopeActive: Bool = false) {
+        if !slideshowState.isEmpty {
+            pendingOpenURL = url
+            pendingOpenURLScopeActive = scopeActive
+            showOpenWarning = true
+        } else {
+            loadSlideshow(from: url)
+            if scopeActive { url.stopAccessingSecurityScopedResource() }
+        }
+    }
+
     private func handleOpenSlideshow(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
@@ -1044,14 +1082,29 @@ struct ContentView: View {
     
     private func loadSlideshow(from url: URL) {
         do {
-            // Access security-scoped resource
-            guard url.startAccessingSecurityScopedResource() else {
-                return
-            }
-            defer { url.stopAccessingSecurityScopedResource() }
-            
+            // Security-scoped access: needed for powerbox/bookmark URLs (fileImporter, recents).
+            // application(_:open:) URLs have implicit sandbox access — startAccessing returns false
+            // for them, which is correct and expected. Always call stop if start returned true.
+            let didStartScope = url.startAccessingSecurityScopedResource()
+            defer { if didStartScope { url.stopAccessingSecurityScopedResource() } }
+
             let document = try SlideshowDocument.load(from: url)
-            let photos = document.loadMediaItems()
+            let loadResult = document.loadMediaItems()
+            let photos = loadResult.items
+
+            // If any bookmarks were stale (e.g. file opened on a different machine or after
+            // a volume remount), write fresh bookmark data back to the .softburn file now,
+            // while its security scope is still active. This ensures subsequent opens on this
+            // machine resolve natively rather than repeating the stale-resolve cycle.
+            // Best-effort: silent failure is acceptable (stale-resolve will repeat next open).
+            if loadResult.needsBookmarkRefresh {
+                var updatedDocument = document
+                updatedDocument.bookmarksByPath = (updatedDocument.bookmarksByPath ?? [:])
+                    .merging(loadResult.refreshedFileBookmarks) { _, new in new }
+                updatedDocument.folderBookmarksByPath = (updatedDocument.folderBookmarksByPath ?? [:])
+                    .merging(loadResult.refreshedFolderBookmarks) { _, new in new }
+                try? updatedDocument.save(to: url)
+            }
 
             // Hydrate face cache from document (trusted; no re-detection for these entries)
             Task.detached(priority: .utility) {

@@ -17,6 +17,9 @@ final class AppSessionState: ObservableObject {
     }
 
     @Published var isDirty: Bool = false
+    /// Set by the app delegate when macOS asks us to open a file (double-click, etc.).
+    /// ContentView drains this via onChange/onAppear.
+    @Published var pendingFileOpenURL: URL? = nil
     @Published var showUnsavedChangesAlert: Bool = false
     @Published var isExporting: Bool = false
     

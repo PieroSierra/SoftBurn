@@ -324,12 +324,35 @@ struct SlideshowDocument: Codable {
     
     // MARK: - Photo Loading
 
+    /// Result of loading media items from a document.
+    /// `refreshedFileBookmarks` and `refreshedFolderBookmarks` are non-empty when any
+    /// stored bookmark was stale — callers should write these back to the .softburn file
+    /// so subsequent opens use fresh, machine-native bookmarks instead of repeating the
+    /// stale-resolve cycle.
+    struct MediaLoadResult {
+        var items: [MediaItem]
+        /// Stale file bookmarks refreshed during load: original stored path → fresh base64 bookmark data.
+        var refreshedFileBookmarks: [String: String]
+        /// Stale folder bookmarks refreshed during load: folder path → fresh base64 bookmark data.
+        var refreshedFolderBookmarks: [String: String]
+
+        var needsBookmarkRefresh: Bool {
+            !refreshedFileBookmarks.isEmpty || !refreshedFolderBookmarks.isEmpty
+        }
+    }
+
     /// Convert stored paths back to MediaItems for filesystem items only.
     /// Photos Library items require PhotosLibraryManager for resolution.
     /// Use this method for legacy v5 documents; v6+ should use PhotosLibraryManager.resolveAssets().
-    func loadMediaItems() -> [MediaItem] {
+    ///
+    /// When a bookmark was stale, a fresh bookmark is created immediately (while the security
+    /// scope is still live) and returned in `MediaLoadResult.refreshedFileBookmarks` /
+    /// `refreshedFolderBookmarks`. The caller is responsible for writing these back to disk.
+    func loadMediaItems() -> MediaLoadResult {
         let entries: [MediaEntry] = mediaItems ?? photoPaths.map { MediaEntry(kind: .photo, path: $0) }
         var items: [MediaItem] = []
+        var refreshedFileBookmarks: [String: String] = [:]
+        var refreshedFolderBookmarks: [String: String] = [:]
 
         for entry in entries {
             guard let source = entry.source else { continue }
@@ -348,8 +371,25 @@ struct SlideshowDocument: Codable {
                         relativeTo: nil,
                         bookmarkDataIsStale: &isStale
                     ) {
+                        // Security scope must be active before any file access.
+                        // If the sandbox denies access, skip this item rather than adding a
+                        // URL that will fail silently on every subsequent file operation.
+                        guard resolved.startAccessingSecurityScopedResource() else { continue }
+
                         url = resolved
-                        _ = url.startAccessingSecurityScopedResource()
+
+                        // Stale bookmark: the file was located via volume UUID + inode, but the
+                        // stored path no longer matches (e.g. volume remounted or moved to a
+                        // different machine). Refresh the bookmark now, while the security scope
+                        // is active. NOTE: bookmarkData() MUST be called before any
+                        // stopAccessingSecurityScopedResource() — do not reorder this block.
+                        if isStale, let freshData = try? resolved.bookmarkData(
+                            options: [.withSecurityScope],
+                            includingResourceValuesForKeys: nil,
+                            relativeTo: nil
+                        ) {
+                            refreshedFileBookmarks[path] = freshData.base64EncodedString()
+                        }
                     }
                 }
 
@@ -380,7 +420,7 @@ struct SlideshowDocument: Codable {
         // (FileManager.moveItem) can write to those directories across app launches.
         // Access is intentionally not stopped — it remains active for the app session.
         if let folderBookmarks = folderBookmarksByPath {
-            for (_, bookmarkString) in folderBookmarks {
+            for (folderPath, bookmarkString) in folderBookmarks {
                 guard let bookmarkData = Data(base64Encoded: bookmarkString) else { continue }
                 var isStale = false
                 if let folderURL = try? URL(
@@ -390,11 +430,24 @@ struct SlideshowDocument: Codable {
                     bookmarkDataIsStale: &isStale
                 ) {
                     _ = folderURL.startAccessingSecurityScopedResource()
+
+                    // Refresh stale folder bookmarks while the security scope is live.
+                    if isStale, let freshData = try? folderURL.bookmarkData(
+                        options: [.withSecurityScope],
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    ) {
+                        refreshedFolderBookmarks[folderPath] = freshData.base64EncodedString()
+                    }
                 }
             }
         }
 
-        return items
+        return MediaLoadResult(
+            items: items,
+            refreshedFileBookmarks: refreshedFileBookmarks,
+            refreshedFolderBookmarks: refreshedFolderBookmarks
+        )
     }
 }
 

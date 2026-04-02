@@ -27,6 +27,8 @@
             </dict>
         </dict>
     </array>
+    <key>LSMultipleInstancesProhibited</key>
+    <true/>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

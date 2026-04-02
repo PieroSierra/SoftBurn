@@ -68,6 +68,9 @@ struct MediaGridCollectionView: NSViewRepresentable {
     /// Whitespace click (used to clear selection model).
     let onDeselectAll: () -> Void
 
+    /// Called when a single .softburn file is dropped — open as slideshow instead of adding media.
+    var onOpenSlideshow: ((URL) -> Void)? = nil
+
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
@@ -78,7 +81,18 @@ struct MediaGridCollectionView: NSViewRepresentable {
         container.toolbarInset = toolbarInset
 
         container.onPerformExternalDrop = { urls in
-            self.onDropFiles(urls)
+            if urls.count == 1, urls[0].pathExtension.lowercased() == "softburn" {
+                let url = urls[0]
+                let handler = self.onOpenSlideshow
+                // Must call startAccessing synchronously while drag session is still active.
+                // ContentView (via scopeActive flag) owns the matching stop call.
+                _ = url.startAccessingSecurityScopedResource()
+                DispatchQueue.main.async {
+                    handler?(url)
+                }
+            } else {
+                self.onDropFiles(urls)
+            }
         }
         container.onDropPhotosLibraryItems = { items in
             self.onDropPhotosLibraryItems(items)
@@ -496,7 +510,18 @@ struct MediaGridCollectionView: NSViewRepresentable {
                (draggingInfo.draggingSource as? NSCollectionView) !== collectionView {
                 if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
                    !urls.isEmpty {
-                    parent.onDropFiles(urls)
+                    if urls.count == 1, urls[0].pathExtension.lowercased() == "softburn" {
+                        let url = urls[0]
+                        // Must call startAccessing synchronously while drag session is still active.
+                        // ContentView (via scopeActive flag) owns the matching stop call.
+                        _ = url.startAccessingSecurityScopedResource()
+                        let handler = parent.onOpenSlideshow
+                        DispatchQueue.main.async {
+                            handler?(url)
+                        }
+                    } else {
+                        parent.onDropFiles(urls)
+                    }
                     return true
                 }
                 return false

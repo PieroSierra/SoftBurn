@@ -14,6 +14,7 @@ struct EmptyStateView: View {
     let onDrop: ([URL]) -> Void
     let onDropPhotosLibraryItems: ([MediaItem]) -> Void
     let onPhotosDropAuthorizationDenied: () -> Void
+    var onOpenSlideshow: ((URL) -> Void)? = nil
 
     var body: some View {
         ZStack {
@@ -21,7 +22,8 @@ struct EmptyStateView: View {
             EmptyStateDropZone(
                 onDropFiles: onDrop,
                 onDropPhotosLibraryItems: onDropPhotosLibraryItems,
-                onPhotosDropAuthorizationDenied: onPhotosDropAuthorizationDenied
+                onPhotosDropAuthorizationDenied: onPhotosDropAuthorizationDenied,
+                onOpenSlideshow: onOpenSlideshow
             )
 
             // Visual content (non-interactive)
@@ -56,12 +58,14 @@ struct EmptyStateDropZone: NSViewRepresentable {
     let onDropFiles: ([URL]) -> Void
     let onDropPhotosLibraryItems: ([MediaItem]) -> Void
     let onPhotosDropAuthorizationDenied: () -> Void
+    var onOpenSlideshow: ((URL) -> Void)? = nil
 
     func makeNSView(context: Context) -> EmptyStateDropView {
         let view = EmptyStateDropView()
         view.onDropFiles = onDropFiles
         view.onDropPhotosLibraryItems = onDropPhotosLibraryItems
         view.onPhotosDropAuthorizationDenied = onPhotosDropAuthorizationDenied
+        view.onOpenSlideshow = onOpenSlideshow
         return view
     }
 
@@ -69,6 +73,7 @@ struct EmptyStateDropZone: NSViewRepresentable {
         nsView.onDropFiles = onDropFiles
         nsView.onDropPhotosLibraryItems = onDropPhotosLibraryItems
         nsView.onPhotosDropAuthorizationDenied = onPhotosDropAuthorizationDenied
+        nsView.onOpenSlideshow = onOpenSlideshow
     }
 }
 
@@ -77,6 +82,7 @@ final class EmptyStateDropView: NSView {
     var onDropFiles: (([URL]) -> Void)?
     var onDropPhotosLibraryItems: (([MediaItem]) -> Void)?
     var onPhotosDropAuthorizationDenied: (() -> Void)?
+    var onOpenSlideshow: ((URL) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -134,6 +140,18 @@ final class EmptyStateDropView: NSView {
         guard let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
               !urls.isEmpty else {
             return false
+        }
+        // A single .softburn file = open slideshow, not add media
+        if urls.count == 1, urls[0].pathExtension.lowercased() == "softburn", let handler = onOpenSlideshow {
+            let url = urls[0]
+            // Must call startAccessing synchronously while drag session is still active;
+            // the sandbox extension expires when performDragOperation returns.
+            // ContentView (via the scopeActive flag) owns the matching stop call.
+            _ = url.startAccessingSecurityScopedResource()
+            DispatchQueue.main.async {
+                handler(url)
+            }
+            return true
         }
         onDropFiles?(urls)
         return true
