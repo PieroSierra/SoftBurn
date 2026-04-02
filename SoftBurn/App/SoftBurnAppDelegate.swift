@@ -11,19 +11,14 @@ final class SoftBurnAppDelegate: NSObject, NSApplicationDelegate {
     /// Window("SoftBurn", id: "main") is a single-instance scene — no second window is ever created.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
-        // Task @MainActor: ensures @MainActor isolation for AppSessionState access.
-        // On cold launch the WindowGroup window may not exist yet when this fires —
-        // poll until it appears, then bring it to front.
+        NSApp.activate(ignoringOtherApps: true)
+        // Task @MainActor: one run-loop hop so ContentView is settled (cold launch),
+        // and ensures @MainActor isolation for AppSessionState access.
+        // makeKeyAndOrderFront is safe here with WindowGroup (unlike Window scene,
+        // it doesn't trigger windowShouldClose via SwiftUI lifecycle).
         Task { @MainActor in
+            NSApp.windows.first(where: { !$0.isSheet })?.makeKeyAndOrderFront(nil)
             AppSessionState.shared.pendingFileOpenURL = url
-            for _ in 0..<20 {
-                if let window = NSApp.windows.first(where: { !$0.isSheet }) {
-                    window.makeKeyAndOrderFront(nil)
-                    NSApp.activate(ignoringOtherApps: true)
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(50))
-            }
         }
     }
 
