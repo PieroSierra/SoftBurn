@@ -14,7 +14,10 @@ final class SoftBurnAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         // Task @MainActor: one run-loop hop so ContentView is settled (cold launch),
         // and ensures @MainActor isolation for AppSessionState access.
+        // makeKeyAndOrderFront is safe here with WindowGroup (unlike Window scene,
+        // it doesn't trigger windowShouldClose via SwiftUI lifecycle).
         Task { @MainActor in
+            NSApp.windows.first(where: { !$0.isSheet })?.makeKeyAndOrderFront(nil)
             AppSessionState.shared.pendingFileOpenURL = url
         }
     }
