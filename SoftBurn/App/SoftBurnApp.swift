@@ -31,6 +31,9 @@ struct SoftBurnApp: App {
             ContentView()
                 .environmentObject(session)
         }
+        // Prevent SwiftUI from creating extra windows for external file-open events.
+        // All file opens are handled exclusively by the NSApplicationDelegate.
+        .handlesExternalEvents(matching: [])
         .softBurnWindowToolbarStyleForTahoe()
         .commands {
             // Replace default About panel with a custom one (Photos-style layout).

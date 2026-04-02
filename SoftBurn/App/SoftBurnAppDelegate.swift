@@ -8,24 +8,14 @@ import AppKit
 final class SoftBurnAppDelegate: NSObject, NSApplicationDelegate {
     /// Called by macOS when the user double-clicks a .softburn file in Finder,
     /// or opens one via "Open With", drag-to-dock, etc.
+    /// Window("SoftBurn", id: "main") is a single-instance scene — no second window is ever created.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
         NSApp.activate(ignoringOtherApps: true)
-        // Three async hops let SwiftUI create and fully settle any extra window it opens
-        // for this file-open event (onAppear fires and sees nil pendingFileOpenURL → noop).
-        // Only after the extra window is closed do we set the URL, so the original window
-        // is the only one that can handle it.
-        DispatchQueue.main.async {
-            DispatchQueue.main.async {
-                DispatchQueue.main.async {
-                    let keyWindows = NSApp.windows.filter { $0.canBecomeKey }
-                    keyWindows.dropFirst().forEach { $0.close() }
-                    keyWindows.first?.makeKeyAndOrderFront(nil)
-                    Task { @MainActor in
-                        AppSessionState.shared.pendingFileOpenURL = url
-                    }
-                }
-            }
+        // Task @MainActor: one run-loop hop so ContentView is settled (cold launch),
+        // and ensures @MainActor isolation for AppSessionState access.
+        Task { @MainActor in
+            AppSessionState.shared.pendingFileOpenURL = url
         }
     }
 
