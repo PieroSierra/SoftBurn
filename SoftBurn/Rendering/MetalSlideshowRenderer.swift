@@ -517,12 +517,27 @@ final class MetalSlideshowRenderer {
         let didStart = url.startAccessingSecurityScopedResource()
         defer { if didStart { url.stopAccessingSecurityScopedResource() } }
 
-        return try? loader.newTexture(URL: url, options: [
-            MTKTextureLoader.Option.SRGB: false,
-            MTKTextureLoader.Option.origin: MTKTextureLoader.Origin.topLeft,
-            MTKTextureLoader.Option.textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
-            MTKTextureLoader.Option.textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue),
-        ])
+        let options: [MTKTextureLoader.Option: Any] = [
+            .SRGB: false,
+            .origin: MTKTextureLoader.Origin.topLeft,
+            .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
+            .textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue),
+        ]
+
+        // Fast path: direct URL load (avoids intermediate bitmap copy).
+        if let tex = try? loader.newTexture(URL: url, options: options) {
+            return tex
+        }
+
+        // Fallback: route through NSImage so EXIF orientation is normalised before
+        // the CGImage reaches Metal (MTKTextureLoader rejects non-up orientations).
+        var rect = CGRect.zero
+        guard let nsImage = NSImage(contentsOf: url),
+              let cg = nsImage.cgImage(forProposedRect: &rect, context: nil, hints: nil) else {
+            print("⚠️ MTKTextureLoader: could not load \(url.lastPathComponent)")
+            return nil
+        }
+        return try? loader.newTexture(cgImage: cg, options: options)
     }
 
     private func loadTextureFromPhotosLibrary(localIdentifier: String) -> MTLTexture? {
